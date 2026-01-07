@@ -1,0 +1,13 @@
+# Web Framework
+streamlit>=1.52.0
+
+# Multi-Agent Framework
+crewai>=1.7.0
+crewai-tools>=1.7.0
+
+# LLM Integration
+langchain-google-genai>=4.1.0
+google-generativeai>=0.3.0
+
+# Python Version
+# Python >= 3.10 required
