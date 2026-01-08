@@ -15,7 +15,7 @@ class CharacterAgentCrew:
     封装 CrewAI 的复杂性，提供简单的 API
     """
 
-    def __init__(self, scene: str, characters: List[Dict[str, str]], api_key: str):
+    def __init__(self, scene: str, characters: List[Dict[str, str]], api_key: str, model_id: str = "gemini-2.0-flash-exp", user_character: Optional[Dict[str, str]] = None):
         """
         初始化 Agent 团队
 
@@ -23,14 +23,18 @@ class CharacterAgentCrew:
             scene: 场景描述
             characters: 角色列表 [{'name': '...', 'personality': '...'}, ...]
             api_key: Google API Key
+            model_id: Gemini 模型 ID (默认: gemini-2.0-flash-exp)
+            user_character: 用户角色信息 {'name': '...', 'personality': '...'} (可选)
         """
         self.scene = scene
         self.characters = characters
         self.api_key = api_key
+        self.model_id = model_id
+        self.user_character = user_character or {'name': '你', 'personality': ''}
 
         # 初始化 Gemini LLM
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
+            model=model_id,
             google_api_key=api_key,
             temperature=0.7,
             convert_system_message_to_human=True  # 兼容性设置
@@ -158,18 +162,33 @@ class CharacterAgentCrew:
         # 场景
         context_parts.append(f"场景：{self.scene}")
 
-        # 最近对话历史
-        if self.conversation_history:
-            recent = self.conversation_history[-10:]  # 最近10条
-            history_text = "\n".join([
-                f"{msg['speaker']}: {msg['content']}"
-                for msg in recent
-            ])
-            context_parts.append(f"\n最近对话：\n{history_text}")
+        # 用户角色信息
+        if self.user_character and self.user_character.get('personality'):
+            context_parts.append(f"\n用户角色：{self.user_character['name']}（{self.user_character['personality']}）")
+        else:
+            context_parts.append(f"\n用户：{self.user_character['name']}")
 
-        # 用户输入
+        # 最近对话历史（使用 character_memories 中的群聊记录）
+        if character_memories:
+            # 从任意角色的记忆中获取群聊消息（所有角色的群聊记忆是相同的）
+            first_char = list(character_memories.keys())[0]
+            group_messages = [
+                msg for msg in character_memories[first_char]
+                if msg.get('type') == 'group'
+            ]
+
+            # 最近 10 条群聊消息
+            recent = group_messages[-10:] if len(group_messages) > 10 else group_messages
+            if recent:
+                history_text = "\n".join([
+                    f"{msg['speaker']}: {msg['content']}"
+                    for msg in recent
+                ])
+                context_parts.append(f"\n群聊记录：\n{history_text}")
+
+        # 用户输入（如果有的话，这部分作为强调）
         if user_message:
-            context_parts.append(f"\n用户刚才说：{user_message}")
+            context_parts.append(f"\n【用户刚才说】：{user_message}")
         else:
             context_parts.append("\n（自主对话，无用户输入）")
 

@@ -53,6 +53,30 @@ def init_session_state():
     if 'use_crewai' not in st.session_state:
         st.session_state.use_crewai = True  # 默认启用
 
+    # v3.1.0: 模型选择
+    if 'model_id' not in st.session_state:
+        st.session_state.model_id = 'gemini-2.0-flash-exp'  # 默认模型
+
+    # v3.1.0: 用户角色设置
+    if 'user_character' not in st.session_state:
+        st.session_state.user_character = {
+            'enabled': False,
+            'name': '你',
+            'personality': ''
+        }
+
+    # v3.1.0: 回合制对话模式
+    if 'turn_based_mode' not in st.session_state:
+        st.session_state.turn_based_mode = False
+
+    # v3.1.0: 回合制状态
+    if 'turn_state' not in st.session_state:
+        st.session_state.turn_state = {
+            'active': False,
+            'current_turn': 0,
+            'pending_responses': []
+        }
+
 
 # ============= v3.0.0 CrewAI 辅助函数 =============
 
@@ -501,7 +525,7 @@ def generate_single_reply_with_gemini(scene: str, character: Dict[str, str],
 """
 
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model=st.session_state.get('model_id', 'gemini-2.0-flash-exp'),
             contents=prompt
         )
 
@@ -542,7 +566,7 @@ def generate_initial_conversation_with_gemini(scene: str, characters: List[Dict[
 """
 
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model=st.session_state.get('model_id', 'gemini-2.0-flash-exp'),
             contents=prompt
         )
 
@@ -595,7 +619,7 @@ def generate_group_reply_with_gemini(scene: str, characters: List[Dict[str, str]
 """
 
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model=st.session_state.get('model_id', 'gemini-2.0-flash-exp'),
             contents=prompt
         )
 
@@ -641,7 +665,7 @@ def generate_private_reply_with_gemini(scene: str, character: Dict[str, str],
 """
 
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model=st.session_state.get('model_id', 'gemini-2.0-flash-exp'),
             contents=prompt
         )
 
@@ -687,9 +711,18 @@ def main():
                 try:
                     json_str = preset_file.read().decode('utf-8')
                     if load_preset_from_json(json_str):
+                        # 显示加载的内容
+                        with st.expander("📋 查看加载的预设内容", expanded=True):
+                            st.markdown(f"**场景**：{st.session_state.scene}")
+                            st.markdown(f"**角色数量**：{st.session_state.num_characters}")
+                            for idx, char in enumerate(st.session_state.characters, 1):
+                                st.markdown(f"{idx}. **{char['name']}**：{char['personality']}")
+
+                        import time
+                        time.sleep(1.5)  # 给用户时间查看
                         st.rerun()
                 except Exception as e:
-                    st.error(f"文件读取失败: {str(e)}")
+                    st.error(f"❌ 文件读取失败: {str(e)}")
 
             st.markdown("---")
 
@@ -700,6 +733,30 @@ def main():
                                    value=st.session_state.get('api_key', ''),
                                    type="password",
                                    help="从 Google AI Studio 获取")
+
+            # v3.1.0: 模型选择
+            st.markdown("##### 🤖 模型选择")
+            model_options = {
+                "Gemini 2.0 Flash Exp（推荐）": "gemini-2.0-flash-exp",
+                "Gemini 1.5 Flash": "gemini-1.5-flash",
+                "Gemini 1.5 Pro": "gemini-1.5-pro",
+                "Gemini 1.0 Pro": "gemini-1.0-pro"
+            }
+
+            # 找到当前选中的模型名称
+            current_model_name = [name for name, model_id in model_options.items()
+                                 if model_id == st.session_state.model_id]
+            current_index = list(model_options.keys()).index(current_model_name[0]) if current_model_name else 0
+
+            selected_model_name = st.selectbox(
+                "选择模型",
+                options=list(model_options.keys()),
+                index=current_index,
+                help="不同模型有不同的速度和质量权衡\n• Flash: 快速、成本低\n• Pro: 质量高、功能全"
+            )
+
+            st.session_state.model_id = model_options[selected_model_name]
+            st.info(f"当前模型：`{st.session_state.model_id}`")
 
             # v3.0.0: CrewAI 开关
             if CREWAI_AVAILABLE:
@@ -719,6 +776,57 @@ def main():
         else:
             api_key = ""
             st.info("当前使用 Mock 数据模式")
+
+        st.markdown("---")
+
+        # v3.1.0: 用户角色设置
+        st.header("👤 你的角色")
+        user_char_enabled = st.checkbox(
+            "启用角色扮演",
+            value=st.session_state.user_character['enabled'],
+            help="设置你的角色名字和性格，让 AI 更好地与你互动"
+        )
+        st.session_state.user_character['enabled'] = user_char_enabled
+
+        if user_char_enabled:
+            user_name = st.text_input(
+                "你的名字",
+                value=st.session_state.user_character['name'],
+                placeholder="输入你的角色名",
+                help="在对话中显示的名字"
+            )
+            st.session_state.user_character['name'] = user_name if user_name else '你'
+
+            user_personality = st.text_area(
+                "你的性格",
+                value=st.session_state.user_character['personality'],
+                placeholder="例如：理性、好奇、善于提问...",
+                help="描述你的角色性格特点（可选）",
+                height=80
+            )
+            st.session_state.user_character['personality'] = user_personality
+
+            # 显示当前设置
+            st.caption(f"💡 当前角色：**{st.session_state.user_character['name']}**")
+        else:
+            st.session_state.user_character['name'] = '你'
+            st.session_state.user_character['personality'] = ''
+
+        st.markdown("---")
+
+        # v3.1.0: 回合制对话模式
+        st.header("🎮 对话控制")
+        turn_based = st.checkbox(
+            "启用回合制模式",
+            value=st.session_state.turn_based_mode,
+            help="开启后，每个角色发言后会暂停，让你决定下一步操作"
+        )
+        st.session_state.turn_based_mode = turn_based
+
+        if turn_based:
+            st.info("🎮 回合制：每个角色发言后暂停，等待你的指令")
+        else:
+            st.info("⚡ 连续模式：角色们自由对话")
 
         st.markdown("---")
 
@@ -877,7 +985,9 @@ def main():
                     st.session_state.crew_manager = CharacterAgentCrew(
                         scene=scene,
                         characters=characters,
-                        api_key=api_key
+                        api_key=api_key,
+                        model_id=st.session_state.model_id,  # v3.1.0: 传入选中的模型
+                        user_character=st.session_state.user_character  # v3.1.0: 传入用户角色信息
                     )
                 except Exception as e:
                     st.error(f"CrewAI 初始化失败: {str(e)}")
@@ -946,14 +1056,17 @@ def main():
 
             # 用户交互区域
             st.markdown("---")
-            col1, col2 = st.columns([1, 1])
 
-            with col1:
-                user_input = st.chat_input("💬 输入你的消息，参与群聊...")
-
-            with col2:
-                auto_continue_cols = st.columns([3, 1])
-                with auto_continue_cols[0]:
+            # v3.1.0: 对话控制区域（包含自主对话和添加角色）
+            control_cols = st.columns([2, 1, 1, 1])
+            with control_cols[0]:
+                st.markdown("##### 🎭 自主对话控制")
+            with control_cols[1]:
+                # v3.1.0: 回合制模式下限制轮数为 1
+                if st.session_state.turn_based_mode:
+                    num_rounds = 1
+                    st.markdown("**轮数**: 1 (回合制)")
+                else:
                     num_rounds = st.number_input(
                         "轮数",
                         min_value=1,
@@ -962,12 +1075,75 @@ def main():
                         key="auto_rounds",
                         help="角色们自主对话的轮数"
                     )
-                with auto_continue_cols[1]:
-                    auto_continue = st.button("🎭 继续聊", use_container_width=True, help="让角色们自主继续对话")
+            with control_cols[2]:
+                # v3.1.0: 回合制模式下按钮文字不同
+                button_text = "▶️ 下一轮" if st.session_state.turn_based_mode else "🎭 开始对话"
+                button_help = "进行下一轮对话" if st.session_state.turn_based_mode else "让角色们自主继续对话"
+                auto_continue = st.button(button_text, use_container_width=True, help=button_help)
+            with control_cols[3]:
+                # v3.1.0: 添加新角色按钮
+                add_char_btn = st.button("➕ 新角色", use_container_width=True, help="中途加入新角色")
+
+            # v3.1.0: 添加新角色对话框
+            if add_char_btn:
+                @st.dialog("➕ 添加新角色")
+                def add_new_character():
+                    st.write("为对话添加一个新角色")
+
+                    new_char_name = st.text_input("角色名字", placeholder="例如：李明")
+                    new_char_personality = st.text_area(
+                        "角色性格",
+                        placeholder="例如：幽默风趣，喜欢讲笑话",
+                        height=100
+                    )
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ 添加", use_container_width=True):
+                            if new_char_name and new_char_personality:
+                                # 添加到角色列表
+                                new_char = {'name': new_char_name, 'personality': new_char_personality}
+                                st.session_state.characters.append(new_char)
+                                st.session_state.num_characters += 1
+
+                                # 初始化新角色的记忆
+                                if new_char_name not in st.session_state.character_memories:
+                                    st.session_state.character_memories[new_char_name] = []
+
+                                # 如果使用 CrewAI，需要重新初始化
+                                if st.session_state.crew_manager and CREWAI_AVAILABLE:
+                                    try:
+                                        st.session_state.crew_manager = CharacterAgentCrew(
+                                            scene=st.session_state.scene,
+                                            characters=st.session_state.characters,
+                                            api_key=api_key,
+                                            model_id=st.session_state.model_id,
+                                            user_character=st.session_state.user_character
+                                        )
+                                    except Exception as e:
+                                        st.error(f"CrewAI 重新初始化失败: {str(e)}")
+
+                                # 添加系统消息
+                                system_msg = f"📢 新角色 **{new_char_name}** 加入了对话！"
+                                add_group_message("系统", system_msg, 'system')
+
+                                st.success(f"✅ 角色 {new_char_name} 已加入对话！")
+                                st.rerun()
+                            else:
+                                st.error("请填写角色名字和性格")
+                    with col2:
+                        if st.button("❌ 取消", use_container_width=True):
+                            st.rerun()
+
+                add_new_character()
+
+            # 用户输入框（占满宽度，固定在底部）
+            user_input = st.chat_input("💬 输入你的消息，参与群聊...")
 
             if user_input:
-                # 添加用户消息到所有角色的记忆
-                add_group_message('你', user_input, 'user')
+                # 添加用户消息到所有角色的记忆（使用用户设置的角色名）
+                user_name = st.session_state.user_character['name']
+                add_group_message(user_name, user_input, 'user')
 
                 status_placeholder = st.empty()
 
@@ -1028,7 +1204,11 @@ def main():
                         # 传统模式
                         _fallback_sequential_generation(None, use_real_api, api_key, status_placeholder)
 
-                status_placeholder.success(f"✅ 完成 {int(num_rounds)} 轮自主对话！")
+                # v3.1.0: 回合制模式下显示不同的提示
+                if st.session_state.turn_based_mode:
+                    status_placeholder.success("✅ 本轮对话完成！点击「▶️ 下一轮」继续，或自己发言参与对话")
+                else:
+                    status_placeholder.success(f"✅ 完成 {int(num_rounds)} 轮自主对话！")
                 st.rerun()
 
         else:
