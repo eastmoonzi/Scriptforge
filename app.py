@@ -711,16 +711,18 @@ def main():
                 try:
                     json_str = preset_file.read().decode('utf-8')
                     if load_preset_from_json(json_str):
-                        # 显示加载的内容
-                        with st.expander("📋 查看加载的预设内容", expanded=True):
+                        # v3.1.0: 显示加载的预设内容（使用独立的成功消息）
+                        st.success("✅ 预设加载成功！预设内容已应用到下方设置中")
+
+                        # 显示预设详情
+                        with st.expander("📋 查看预设详情", expanded=False):
                             st.markdown(f"**场景**：{st.session_state.scene}")
                             st.markdown(f"**角色数量**：{st.session_state.num_characters}")
+                            st.markdown("**角色列表**：")
                             for idx, char in enumerate(st.session_state.characters, 1):
-                                st.markdown(f"{idx}. **{char['name']}**：{char['personality']}")
+                                st.markdown(f"  {idx}. **{char['name']}** — {char['personality']}")
 
-                        import time
-                        time.sleep(1.5)  # 给用户时间查看
-                        st.rerun()
+                            st.info("💡 你可以在下方继续编辑场景和角色，或直接点击「开始对话」")
                 except Exception as e:
                     st.error(f"❌ 文件读取失败: {str(e)}")
 
