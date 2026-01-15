@@ -12,6 +12,20 @@ except ImportError:
     CREWAI_AVAILABLE = False
     st.warning("⚠️ CrewAI 未安装，使用降级模式")
 
+# v3.2.0: 导入 RAG 记忆系统
+try:
+    from memory_rag import RAGMemorySystem
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+
+# v3.3.0: 导入 Few-shot 模版系统
+try:
+    from template_manager import TemplateManager
+    TEMPLATE_AVAILABLE = True
+except ImportError:
+    TEMPLATE_AVAILABLE = False
+
 # 初始化 session state
 def init_session_state():
     """初始化会话状态 - v2.2.0 多 Agent 架构"""
@@ -69,13 +83,33 @@ def init_session_state():
     if 'turn_based_mode' not in st.session_state:
         st.session_state.turn_based_mode = False
 
-    # v3.1.0: 回合制状态
-    if 'turn_state' not in st.session_state:
-        st.session_state.turn_state = {
-            'active': False,
-            'current_turn': 0,
-            'pending_responses': []
-        }
+    # v3.1.1: 单次发言模式 - 下一个发言者索引（轮流）
+    if 'next_speaker_index' not in st.session_state:
+        st.session_state.next_speaker_index = 0
+
+    # v3.1.1: 预设导入版本号（用于强制刷新输入框）
+    if 'preset_version' not in st.session_state:
+        st.session_state.preset_version = 0
+
+    # v3.2.0: RAG 记忆系统
+    if 'use_rag' not in st.session_state:
+        st.session_state.use_rag = False
+
+    if 'rag_system' not in st.session_state:
+        st.session_state.rag_system = None
+
+    # v3.3.0: Few-shot 模版系统
+    if 'template_manager' not in st.session_state:
+        if TEMPLATE_AVAILABLE:
+            st.session_state.template_manager = TemplateManager()
+        else:
+            st.session_state.template_manager = None
+
+    if 'selected_template' not in st.session_state:
+        st.session_state.selected_template = None  # None 表示不使用模版
+
+    if 'use_templates' not in st.session_state:
+        st.session_state.use_templates = False
 
 
 # ============= v3.0.0 CrewAI 辅助函数 =============
@@ -84,12 +118,16 @@ def _fallback_sequential_generation(user_input, use_real_api, api_key, status_pl
     """
     降级方案：传统顺序发言模式
     当 CrewAI 不可用或失败时使用
+    v3.2.0: 支持 RAG 检索
     """
     for idx, char in enumerate(st.session_state.characters, 1):
         status_placeholder.info(f"🤔 {char['name']} 正在回复... ({idx}/{len(st.session_state.characters)})")
 
-        # 获取角色的完整记忆
-        char_memory = get_character_memory(char['name'])
+        # v3.2.0: 获取角色的完整记忆（支持 RAG）
+        char_memory = get_character_memory(
+            char['name'],
+            current_query=user_input if user_input else ""
+        )
 
         # 生成回复
         if use_real_api and api_key:
@@ -125,6 +163,7 @@ def init_character_memories():
 def add_group_message(speaker: str, content: str, msg_type: str = 'character'):
     """
     添加群聊消息（所有角色都能看到）
+    v3.2.0: 支持同步到 RAG 系统
 
     Args:
         speaker: 发言者名称
@@ -147,10 +186,25 @@ def add_group_message(speaker: str, content: str, msg_type: str = 'character'):
     for char_name in st.session_state.character_memories:
         st.session_state.character_memories[char_name].append(message.copy())
 
+        # v3.2.0: 同步到 RAG 系统
+        if st.session_state.use_rag and st.session_state.rag_system:
+            try:
+                st.session_state.rag_system.add_memory(
+                    character_name=char_name,
+                    speaker=speaker,
+                    content=content,
+                    msg_type='group',
+                    timestamp=message['timestamp']
+                )
+            except Exception as e:
+                # RAG 失败不影响主流程
+                pass
+
 
 def add_private_message(character_name: str, speaker: str, content: str, msg_type: str = 'character'):
     """
     添加私聊消息（只有指定角色能看到）
+    v3.2.0: 支持同步到 RAG 系统
 
     Args:
         character_name: 角色名称
@@ -171,18 +225,50 @@ def add_private_message(character_name: str, speaker: str, content: str, msg_typ
     if character_name in st.session_state.character_memories:
         st.session_state.character_memories[character_name].append(message)
 
+        # v3.2.0: 同步到 RAG 系统
+        if st.session_state.use_rag and st.session_state.rag_system:
+            try:
+                st.session_state.rag_system.add_memory(
+                    character_name=character_name,
+                    speaker=speaker,
+                    content=content,
+                    msg_type='private',
+                    timestamp=message['timestamp']
+                )
+            except Exception as e:
+                # RAG 失败不影响主流程
+                pass
 
-def get_character_memory(character_name: str, limit: int = 20) -> List[Dict]:
+
+def get_character_memory(character_name: str, limit: int = 20, current_query: str = "") -> List[Dict]:
     """
     获取角色的记忆（按时间排序）
+    v3.2.0: 支持 RAG 混合检索
 
     Args:
         character_name: 角色名称
-        limit: 返回最近 N 条记忆
+        limit: 返回最近 N 条记忆（传统模式）
+        current_query: 当前查询（RAG 模式）
 
     Returns:
         角色的记忆列表
     """
+    # v3.2.0: RAG 混合检索模式
+    if st.session_state.use_rag and st.session_state.rag_system and current_query:
+        try:
+            # 使用混合检索：时间窗口 + 语义检索
+            memories = st.session_state.rag_system.get_hybrid_context(
+                character_name=character_name,
+                current_query=current_query,
+                recent_k=10,   # 最近10条
+                relevant_k=5   # 相关5条
+            )
+            return memories
+        except Exception as e:
+            # RAG 失败，降级到传统模式
+            print(f"RAG 检索失败，降级: {str(e)}")
+
+    # 传统模式：时间窗口检索
     if character_name not in st.session_state.character_memories:
         return []
 
@@ -217,7 +303,7 @@ def get_private_messages(character_name: str) -> List[Dict]:
 # 预设管理
 def load_preset_from_json(json_str: str) -> bool:
     """
-    从 JSON 字符串加载预设
+    从 JSON 字符串加载预设 - v3.1.1 重写版本
 
     Args:
         json_str: JSON 格式的预设数据
@@ -241,6 +327,23 @@ def load_preset_from_json(json_str: str) -> bool:
         # 可选：加载 API Key
         if 'api_key' in data and data['api_key']:
             st.session_state.api_key = data['api_key']
+
+        # v3.1.1: 清除所有角色输入框的 session_state key（强制刷新）
+        # 遍历所有可能的角色输入框 key 并删除
+        keys_to_delete = [
+            key for key in st.session_state.keys()
+            if key.startswith('setup_name_') or key.startswith('setup_personality_')
+        ]
+        for key in keys_to_delete:
+            del st.session_state[key]
+
+        # v3.1.1: 增加预设版本号（触发输入框重新渲染）
+        st.session_state.preset_version += 1
+
+        # v3.1.1: 同时将角色数据写入到输入框的 session_state key 中
+        for idx, char in enumerate(st.session_state.characters, 1):
+            st.session_state[f'setup_name_{idx}'] = char.get('name', '')
+            st.session_state[f'setup_personality_{idx}'] = char.get('personality', '')
 
         st.success(f"✅ 预设 '{data.get('preset_name', '未命名')}' 加载成功！")
         return True
@@ -418,7 +521,7 @@ def mock_generate_private_reply(scene: str, character: Dict[str, str],
 def generate_single_reply_with_gemini(scene: str, character: Dict[str, str],
                                       characters: List[Dict[str, str]],
                                       character_memory: List[Dict[str, str]],
-                                      is_initial: bool, api_key: str) -> str:
+                                      is_initial: bool, api_key: str, is_private: bool = False) -> str:
     """
     使用 Gemini API 生成单个角色的发言（基于角色完整记忆）
 
@@ -429,6 +532,7 @@ def generate_single_reply_with_gemini(scene: str, character: Dict[str, str],
         character_memory: 角色的完整记忆（包含群聊+私聊）
         is_initial: 是否是初始对话
         api_key: API密钥
+        is_private: 是否是私聊场景（v3.1.1 新增）
 
     Returns:
         角色的发言内容
@@ -458,8 +562,15 @@ def generate_single_reply_with_gemini(scene: str, character: Dict[str, str],
         # 构建角色列表
         characters_text = "\n".join([f"- {c['name']}: {c['personality']}" for c in characters])
 
+        # v3.3.0: 检查是否使用模版
+        use_template = (
+            st.session_state.get('use_templates', False) and
+            st.session_state.get('selected_template') and
+            st.session_state.get('template_manager')
+        )
+
         if is_initial:
-            prompt = f"""
+            base_prompt = f"""
 你正在扮演角色：{character['name']}（性格：{character['personality']}）
 场景：{scene}
 
@@ -485,6 +596,20 @@ def generate_single_reply_with_gemini(scene: str, character: Dict[str, str],
 
 你的发言：
 """
+            # v3.3.0: 如果启用模版，生成增强版 Prompt
+            if use_template:
+                try:
+                    prompt = st.session_state.template_manager.generate_enhanced_prompt(
+                        template_id=st.session_state.selected_template,
+                        scene=scene,
+                        character=character,
+                        base_prompt=base_prompt
+                    )
+                except Exception as e:
+                    print(f"⚠️ 模版增强失败，使用默认 Prompt: {str(e)}")
+                    prompt = base_prompt
+            else:
+                prompt = base_prompt
         else:
             prompt = f"""
 你正在扮演角色：{character['name']}（性格：{character['personality']}）
@@ -502,20 +627,20 @@ def generate_single_reply_with_gemini(scene: str, character: Dict[str, str],
 2. 私聊记录（只有你知道的私密信息）：
 {private_text}
 
-请以{character['name']}的身份和性格，在群聊中发言。
+请以{character['name']}的身份和性格，{"在私聊中回应用户" if is_private else "在群聊中发言"}。
 
 【重要提示】
 - 仔细阅读你的完整记忆（群聊+私聊），统揽全局，理解整体对话的走向
-- 你可以自由选择回应的对象和方式：
-  * 回应用户的发言
-  * 回应任何一个角色说的话
-  * 对之前提到的话题进行补充或延伸
-  * 综合多个人的观点给出你的看法
-  * 提出与对话相关的新想法
-- **关键**：你可以利用私聊中获得的信息，但要注意：
-  * 不要直接泄露私聊内容（其他人不知道）
-  * 可以巧妙地暗示或利用这些信息
-  * 让你的发言更有深度和策略性
+{"- 这是一对一的私聊，你可以更加坦率、直接地表达" if is_private else "- 你可以自由选择回应的对象和方式："}
+{"  * 直接回应用户的问题或话题" if is_private else "  * 回应用户的发言"}
+{"  * 分享你的想法、感受或秘密" if is_private else "  * 回应任何一个角色说的话"}
+{"  * 询问用户的意见或建议" if is_private else "  * 对之前提到的话题进行补充或延伸"}
+{"  * 根据私聊的亲密氛围调整你的语气" if is_private else "  * 综合多个人的观点给出你的看法"}
+{'' if is_private else "  * 提出与对话相关的新想法"}
+{"" if is_private else "- **关键**：你可以利用私聊中获得的信息，但要注意："}
+{"" if is_private else "  * 不要直接泄露私聊内容（其他人不知道）"}
+{"" if is_private else "  * 可以巧妙地暗示或利用这些信息"}
+{"" if is_private else "  * 让你的发言更有深度和策略性"}
 - 你的发言要基于对整个记忆的理解，而不是只看最后一条消息
 - 要让对话连贯、自然、有深度
 - 充分展现你的性格特点
@@ -711,18 +836,8 @@ def main():
                 try:
                     json_str = preset_file.read().decode('utf-8')
                     if load_preset_from_json(json_str):
-                        # v3.1.0: 显示加载的预设内容（使用独立的成功消息）
-                        st.success("✅ 预设加载成功！预设内容已应用到下方设置中")
-
-                        # 显示预设详情
-                        with st.expander("📋 查看预设详情", expanded=False):
-                            st.markdown(f"**场景**：{st.session_state.scene}")
-                            st.markdown(f"**角色数量**：{st.session_state.num_characters}")
-                            st.markdown("**角色列表**：")
-                            for idx, char in enumerate(st.session_state.characters, 1):
-                                st.markdown(f"  {idx}. **{char['name']}** — {char['personality']}")
-
-                            st.info("💡 你可以在下方继续编辑场景和角色，或直接点击「开始对话」")
+                        # v3.1.1: 预设加载成功，立即 rerun 以刷新表单
+                        st.rerun()
                 except Exception as e:
                     st.error(f"❌ 文件读取失败: {str(e)}")
 
@@ -736,13 +851,15 @@ def main():
                                    type="password",
                                    help="从 Google AI Studio 获取")
 
-            # v3.1.0: 模型选择
+            # v3.1.1: 模型选择（扩展更多模型）
             st.markdown("##### 🤖 模型选择")
             model_options = {
-                "Gemini 2.0 Flash Exp（推荐）": "gemini-2.0-flash-exp",
-                "Gemini 1.5 Flash": "gemini-1.5-flash",
-                "Gemini 1.5 Pro": "gemini-1.5-pro",
-                "Gemini 1.0 Pro": "gemini-1.0-pro"
+                "Gemini 2.0 Flash Exp（推荐，最快）": "gemini-2.0-flash-exp",
+                "Gemini 2.0 Flash Thinking Exp（思考模式）": "gemini-2.0-flash-thinking-exp",
+                "Gemini 1.5 Flash（稳定版）": "gemini-1.5-flash",
+                "Gemini 1.5 Flash-8B（轻量高速）": "gemini-1.5-flash-8b",
+                "Gemini 1.5 Pro（高质量）": "gemini-1.5-pro",
+                "Gemini 1.0 Pro（经典版）": "gemini-1.0-pro"
             }
 
             # 找到当前选中的模型名称
@@ -754,7 +871,7 @@ def main():
                 "选择模型",
                 options=list(model_options.keys()),
                 index=current_index,
-                help="不同模型有不同的速度和质量权衡\n• Flash: 快速、成本低\n• Pro: 质量高、功能全"
+                help="模型说明：\n• 2.0 Flash Exp: 最新实验版，速度最快\n• 2.0 Thinking: 思考推理模式\n• 1.5 Flash: 稳定快速\n• 1.5 Flash-8B: 轻量级高速版\n• 1.5 Pro: 高质量复杂任务\n• 1.0 Pro: 经典稳定版"
             )
 
             st.session_state.model_id = model_options[selected_model_name]
@@ -775,6 +892,102 @@ def main():
                     st.info("ℹ️ 传统顺序发言模式")
             else:
                 st.warning("⚠️ CrewAI 未安装，使用传统模式")
+
+            st.markdown("---")
+
+            # v3.2.0: RAG 记忆系统开关
+            st.markdown("##### 🧠 RAG 记忆系统")
+            if RAG_AVAILABLE:
+                use_rag = st.checkbox(
+                    "启用 RAG（语义检索）",
+                    value=st.session_state.use_rag,
+                    help="使用向量数据库和语义检索，智能检索历史对话中的相关内容"
+                )
+                st.session_state.use_rag = use_rag
+
+                if use_rag:
+                    # 初始化 RAG 系统
+                    if st.session_state.rag_system is None:
+                        try:
+                            with st.spinner("初始化 RAG 系统..."):
+                                st.session_state.rag_system = RAGMemorySystem(
+                                    api_key=api_key,
+                                    persist_directory="./chroma_db"
+                                )
+                            st.success("✅ RAG 系统已初始化")
+                        except Exception as e:
+                            st.error(f"❌ RAG 初始化失败: {str(e)}")
+                            st.session_state.use_rag = False
+                            st.session_state.rag_system = None
+
+                    if st.session_state.use_rag:
+                        st.success("✅ 使用混合检索（时间+语义）")
+                        st.caption("📊 检索策略：最近10条 + 相关5条")
+                        st.caption("💡 能够智能回忆历史对话中的相关内容")
+                else:
+                    st.info("ℹ️ 使用传统时间窗口检索（最近20条）")
+                    st.session_state.rag_system = None
+            else:
+                st.warning("⚠️ RAG 未安装，使用传统模式")
+                st.caption("安装：`pip install chromadb`")
+
+            st.markdown("---")
+
+            # v3.3.0: Few-shot 模版系统
+            st.markdown("##### 📚 Few-shot 剧本模版")
+            if TEMPLATE_AVAILABLE and st.session_state.template_manager:
+                use_templates = st.checkbox(
+                    "启用剧本模版",
+                    value=st.session_state.use_templates,
+                    help="使用专业剧本示例指导 AI 生成更符合话剧风格的对话"
+                )
+                st.session_state.use_templates = use_templates
+
+                if use_templates:
+                    # 获取可用模版列表
+                    templates = st.session_state.template_manager.list_templates()
+
+                    if templates:
+                        template_options = {
+                            f"{t['name']} ({t['genre']})": t['id']
+                            for t in templates
+                        }
+                        template_options = {"不使用模版": None, **template_options}
+
+                        # 查找当前选中的模版
+                        current_template = st.session_state.selected_template
+                        current_name = "不使用模版"
+                        if current_template:
+                            for name, tid in template_options.items():
+                                if tid == current_template:
+                                    current_name = name
+                                    break
+
+                        selected_name = st.selectbox(
+                            "选择模版",
+                            options=list(template_options.keys()),
+                            index=list(template_options.keys()).index(current_name),
+                            help="根据场景类型选择合适的剧本模版"
+                        )
+
+                        st.session_state.selected_template = template_options[selected_name]
+
+                        if st.session_state.selected_template:
+                            template_info = st.session_state.template_manager.get_template(
+                                st.session_state.selected_template
+                            )
+                            st.success(f"✅ 已选择：{template_info['template_name']}")
+                            st.caption(f"📖 {template_info['description']}")
+                        else:
+                            st.info("ℹ️ 未使用模版，使用默认 Prompt")
+                    else:
+                        st.warning("⚠️ 未找到模版文件")
+                else:
+                    st.info("ℹ️ 未启用模版，使用默认 Prompt")
+                    st.session_state.selected_template = None
+            else:
+                st.warning("⚠️ 模版系统未安装")
+                st.caption("确保 templates/ 目录和 template_manager.py 存在")
         else:
             api_key = ""
             st.info("当前使用 Mock 数据模式")
@@ -816,19 +1029,26 @@ def main():
 
         st.markdown("---")
 
-        # v3.1.0: 回合制对话模式
+        # v3.1.1: 单次发言模式（替代回合制）
         st.header("🎮 对话控制")
-        turn_based = st.checkbox(
-            "启用回合制模式",
+        single_speaker_mode = st.checkbox(
+            "启用单次发言模式",
             value=st.session_state.turn_based_mode,
-            help="开启后，每个角色发言后会暂停，让你决定下一步操作"
+            help="开启后，每次只有一个角色发言（而不是所有角色都说一轮）"
         )
-        st.session_state.turn_based_mode = turn_based
+        st.session_state.turn_based_mode = single_speaker_mode
 
-        if turn_based:
-            st.info("🎮 回合制：每个角色发言后暂停，等待你的指令")
+        if single_speaker_mode:
+            if st.session_state.conversation_started and st.session_state.characters:
+                # 显示下一个发言者
+                next_speaker_name = st.session_state.characters[
+                    st.session_state.next_speaker_index % len(st.session_state.characters)
+                ]['name']
+                st.info(f"🎮 单次发言模式：下一个发言者是 **{next_speaker_name}**（轮流制）")
+            else:
+                st.info("🎮 单次发言：每次只有一个角色说话，角色轮流发言")
         else:
-            st.info("⚡ 连续模式：角色们自由对话")
+            st.info("⚡ 多人对话：每轮所有角色都可能发言，对话更热闹")
 
         st.markdown("---")
 
@@ -927,6 +1147,17 @@ def main():
                 st.session_state.num_characters -= 1
                 st.rerun()
 
+        # v3.1.1: 显示预设加载成功提示
+        if st.session_state.preset_version > 0:
+            st.success("✅ 预设已加载！角色信息已填充到下方表单中")
+            with st.expander("📋 查看预设详情", expanded=False):
+                st.markdown(f"**场景**：{st.session_state.scene}")
+                st.markdown(f"**角色数量**：{st.session_state.num_characters}")
+                st.markdown("**角色列表**：")
+                for idx, char in enumerate(st.session_state.characters, 1):
+                    st.markdown(f"  {idx}. **{char['name']}** — {char['personality']}")
+                st.info("💡 你可以继续编辑，或直接点击「开始对话」")
+
         # 动态生成角色输入框
         characters = []
         num_cols = min(st.session_state.num_characters, 4)  # 每行最多4个
@@ -939,6 +1170,8 @@ def main():
                 if char_idx <= st.session_state.num_characters:
                     with cols[col_idx]:
                         st.markdown(f"**角色 {char_idx}**")
+
+                        # v3.1.1: 优先从 session_state key 读取（预设导入时已写入）
                         name = st.text_input(
                             f"角色{char_idx}名字",
                             key=f"setup_name_{char_idx}",
@@ -1064,10 +1297,10 @@ def main():
             with control_cols[0]:
                 st.markdown("##### 🎭 自主对话控制")
             with control_cols[1]:
-                # v3.1.0: 回合制模式下限制轮数为 1
+                # v3.1.1: 单次发言模式下限制轮数为 1
                 if st.session_state.turn_based_mode:
                     num_rounds = 1
-                    st.markdown("**轮数**: 1 (回合制)")
+                    st.markdown("**轮数**: 1 (单次发言)")
                 else:
                     num_rounds = st.number_input(
                         "轮数",
@@ -1078,9 +1311,9 @@ def main():
                         help="角色们自主对话的轮数"
                     )
             with control_cols[2]:
-                # v3.1.0: 回合制模式下按钮文字不同
-                button_text = "▶️ 下一轮" if st.session_state.turn_based_mode else "🎭 开始对话"
-                button_help = "进行下一轮对话" if st.session_state.turn_based_mode else "让角色们自主继续对话"
+                # v3.1.1: 单次发言模式下按钮文字不同
+                button_text = "▶️ 让一个角色说话" if st.session_state.turn_based_mode else "🎭 开始对话"
+                button_help = "让一个角色发言（单次发言模式）" if st.session_state.turn_based_mode else "让角色们自主继续对话（可能多人发言）"
                 auto_continue = st.button(button_text, use_container_width=True, help=button_help)
             with control_cols[3]:
                 # v3.1.0: 添加新角色按钮
@@ -1151,15 +1384,26 @@ def main():
 
                 # v3.0.0: 使用 CrewAI 或降级模式
                 if st.session_state.crew_manager and CREWAI_AVAILABLE:
-                    # CrewAI 模式：真正的多 Agent 协作
-                    status_placeholder.info("🤖 多 Agent 系统正在协作...")
+                    # v3.1.1: 显示不同的状态提示
+                    if st.session_state.turn_based_mode:
+                        current_speaker = st.session_state.characters[
+                            st.session_state.next_speaker_index % len(st.session_state.characters)
+                        ]['name']
+                        status_placeholder.info(f"🎭 {current_speaker} 正在思考回应...")
+                    else:
+                        status_placeholder.info("🤖 多 Agent 系统正在协作...")
 
                     try:
-                        # 运行 CrewAI
-                        responses = st.session_state.crew_manager.run_conversation_round(
+                        # v3.1.1: 运行 CrewAI，支持单次发言模式（轮流）
+                        responses, next_idx = st.session_state.crew_manager.run_conversation_round(
                             user_message=user_input,
-                            character_memories=st.session_state.character_memories
+                            character_memories=st.session_state.character_memories,
+                            single_speaker=st.session_state.turn_based_mode,
+                            next_speaker_index=st.session_state.next_speaker_index
                         )
+
+                        # 更新下一个发言者索引
+                        st.session_state.next_speaker_index = next_idx
 
                         # 将结果添加到记忆
                         for resp in responses:
@@ -1182,16 +1426,28 @@ def main():
                 status_placeholder = st.empty()
 
                 for round_num in range(int(num_rounds)):
-                    status_placeholder.info(f"🎭 第 {round_num + 1}/{int(num_rounds)} 轮自主对话...")
+                    # v3.1.1: 显示不同的状态提示
+                    if st.session_state.turn_based_mode:
+                        current_speaker = st.session_state.characters[
+                            st.session_state.next_speaker_index % len(st.session_state.characters)
+                        ]['name']
+                        status_placeholder.info(f"🎭 {current_speaker} 正在思考发言...")
+                    else:
+                        status_placeholder.info(f"🎭 第 {round_num + 1}/{int(num_rounds)} 轮自主对话...")
 
                     # v3.0.0: 使用 CrewAI 或降级模式
                     if st.session_state.crew_manager and CREWAI_AVAILABLE:
-                        # CrewAI 模式：让 Agent 自主决定是否发言
+                        # v3.1.1: CrewAI 模式，支持单次发言（轮流）
                         try:
-                            responses = st.session_state.crew_manager.run_conversation_round(
+                            responses, next_idx = st.session_state.crew_manager.run_conversation_round(
                                 user_message=None,  # 自主对话，无用户输入
-                                character_memories=st.session_state.character_memories
+                                character_memories=st.session_state.character_memories,
+                                single_speaker=st.session_state.turn_based_mode,
+                                next_speaker_index=st.session_state.next_speaker_index
                             )
+
+                            # 更新下一个发言者索引
+                            st.session_state.next_speaker_index = next_idx
 
                             # 将结果添加到记忆
                             for resp in responses:
@@ -1206,9 +1462,12 @@ def main():
                         # 传统模式
                         _fallback_sequential_generation(None, use_real_api, api_key, status_placeholder)
 
-                # v3.1.0: 回合制模式下显示不同的提示
+                # v3.1.1: 单次发言模式下显示不同的提示
                 if st.session_state.turn_based_mode:
-                    status_placeholder.success("✅ 本轮对话完成！点击「▶️ 下一轮」继续，或自己发言参与对话")
+                    next_speaker = st.session_state.characters[
+                        st.session_state.next_speaker_index % len(st.session_state.characters)
+                    ]['name']
+                    status_placeholder.success(f"✅ 本轮完成！下一个发言者：**{next_speaker}** | 点击「▶️ 让一个角色说话」继续")
                 else:
                     status_placeholder.success(f"✅ 完成 {int(num_rounds)} 轮自主对话！")
                 st.rerun()
@@ -1246,8 +1505,11 @@ def main():
 
                 # 生成角色回复（基于角色的完整记忆）
                 with st.spinner(f"{selected_char_name} 正在回复..."):
-                    # 获取角色的完整记忆（群聊+私聊）
-                    char_memory = get_character_memory(selected_char_name)
+                    # v3.2.0: 获取角色的完整记忆（群聊+私聊，支持 RAG）
+                    char_memory = get_character_memory(
+                        selected_char_name,
+                        current_query=user_input
+                    )
 
                     if use_real_api and api_key:
                         reply_content = generate_single_reply_with_gemini(
@@ -1256,7 +1518,8 @@ def main():
                             st.session_state.characters,
                             char_memory,
                             is_initial=False,
-                            api_key=api_key
+                            api_key=api_key,
+                            is_private=True  # v3.1.1: 标记为私聊场景
                         )
                     else:
                         reply_content = mock_generate_single_reply(

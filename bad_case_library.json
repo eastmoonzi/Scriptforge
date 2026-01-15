@@ -1,0 +1,275 @@
+{
+  "library_name": "Bad Case 库 - 不良对话案例集",
+  "version": "1.0.0",
+  "created_at": "2026-01-15",
+  "description": "收集和分析多角色对话系统中的典型问题案例，用于持续改进",
+  "categories": [
+    {
+      "category": "角色性格趋同",
+      "category_id": "convergence",
+      "description": "不同角色的发言风格、用词、语气高度相似，失去个性",
+      "cases": [
+        {
+          "case_id": "BAD_001",
+          "severity": "high",
+          "scene": "古堡探险",
+          "characters": ["勇士", "法师", "盗贼"],
+          "issue": "三个角色都变得谨慎，勇士失去了冲动特质",
+          "bad_example": [
+            {"speaker": "勇士", "content": "我们要仔细观察，不能贸然行动。"},
+            {"speaker": "法师", "content": "是的，我们必须谨慎，慢慢分析。"},
+            {"speaker": "盗贼", "content": "对，我们要小心翼翼，不能出错。"}
+          ],
+          "good_example": [
+            {"speaker": "勇士", "content": "管他三七二十一，冲进去就对了！"},
+            {"speaker": "法师", "content": "别冲动！让我先检测一下魔法陷阱..."},
+            {"speaker": "盗贼", "content": "你俩都别吵，我先潜入侦查一遍。"}
+          ],
+          "root_cause": "Prompt 缺少角色性格强化，或记忆系统未正确区分角色",
+          "solution": "在 Prompt 中明确强调角色性格差异，使用 Few-shot 示例"
+        },
+        {
+          "case_id": "BAD_002",
+          "severity": "medium",
+          "scene": "创业公司会议",
+          "characters": ["CEO", "CTO", "CFO"],
+          "issue": "所有人都同意CEO的意见，缺乏辩论",
+          "bad_example": [
+            {"speaker": "CEO", "content": "我们要快速上线新功能。"},
+            {"speaker": "CTO", "content": "好的，我同意。"},
+            {"speaker": "CFO", "content": "我也同意，没问题。"}
+          ],
+          "good_example": [
+            {"speaker": "CEO", "content": "我们要快速上线新功能。"},
+            {"speaker": "CTO", "content": "等等，技术还不成熟，会有风险。"},
+            {"speaker": "CFO", "content": "我看了预算，快速上线会超支30%。"}
+          ],
+          "root_cause": "Agent 缺少独立思考机制，盲目追随主流意见",
+          "solution": "在 Agent 目标中明确要求「挑战不合理观点」"
+        }
+      ]
+    },
+    {
+      "category": "机械轮流发言",
+      "category_id": "mechanical_rotation",
+      "description": "角色按固定顺序发言，缺乏自然对话的随机性和选择性",
+      "cases": [
+        {
+          "case_id": "BAD_003",
+          "severity": "high",
+          "scene": "任意场景",
+          "issue": "每次对话都是 A→B→C→A→B→C 的固定模式",
+          "bad_example": [
+            {"speaker": "A", "content": "..."},
+            {"speaker": "B", "content": "..."},
+            {"speaker": "C", "content": "..."},
+            {"speaker": "A", "content": "..."},
+            {"speaker": "B", "content": "..."},
+            {"speaker": "C", "content": "..."}
+          ],
+          "good_example": [
+            {"speaker": "A", "content": "..."},
+            {"speaker": "C", "content": "...（直接回应A）"},
+            {"speaker": "A", "content": "...（继续和C讨论）"},
+            {"speaker": "B", "content": "...（B在合适时机插话）"}
+          ],
+          "root_cause": "使用顺序发言机制而非 Agent 自主决策",
+          "solution": "使用 CrewAI 等 Agent 框架，让角色自己决定是否发言"
+        },
+        {
+          "case_id": "BAD_004",
+          "severity": "medium",
+          "scene": "用户提问",
+          "issue": "用户只问了一个问题，但三个角色都回答了",
+          "bad_example": [
+            {"speaker": "用户", "content": "现在几点了？"},
+            {"speaker": "A", "content": "现在是下午3点。"},
+            {"speaker": "B", "content": "对，是下午3点。"},
+            {"speaker": "C", "content": "没错，3点整。"}
+          ],
+          "good_example": [
+            {"speaker": "用户", "content": "现在几点了？"},
+            {"speaker": "A", "content": "现在是下午3点。"}
+          ],
+          "root_cause": "缺少「是否需要发言」的判断机制",
+          "solution": "在 Agent 任务中增加「可以选择沉默（PASS）」选项"
+        }
+      ]
+    },
+    {
+      "category": "对话重复、无效",
+      "category_id": "repetition",
+      "description": "对话内容重复，信息密度低，缺少有效推进",
+      "cases": [
+        {
+          "case_id": "BAD_005",
+          "severity": "high",
+          "scene": "任意场景",
+          "issue": "三个角色说了相同的话，只是换了表述",
+          "bad_example": [
+            {"speaker": "A", "content": "我觉得这个方案可以。"},
+            {"speaker": "B", "content": "我也认为这个方案不错。"},
+            {"speaker": "C", "content": "我同意，这个方案很好。"}
+          ],
+          "good_example": [
+            {"speaker": "A", "content": "这个方案的技术实现路径清晰。"},
+            {"speaker": "B", "content": "但成本预算可能会超支15%。"},
+            {"speaker": "C", "content": "我补充一点，用户体验方面需要优化。"}
+          ],
+          "root_cause": "Prompt 缺少「提供新信息」的要求",
+          "solution": "在 Prompt 中明确要求「避免重复他人观点，提供新视角」"
+        },
+        {
+          "case_id": "BAD_006",
+          "severity": "medium",
+          "scene": "讨论话题",
+          "issue": "对话原地打转，没有推进情节",
+          "bad_example": [
+            {"speaker": "A", "content": "我们该怎么办？"},
+            {"speaker": "B", "content": "不知道，你觉得呢？"},
+            {"speaker": "C", "content": "我也不确定..."},
+            {"speaker": "A", "content": "那到底该怎么办？"}
+          ],
+          "good_example": [
+            {"speaker": "A", "content": "我们该怎么办？"},
+            {"speaker": "B", "content": "我建议先调查情况。"},
+            {"speaker": "C", "content": "那我去联系线人，你们准备装备。"}
+          ],
+          "root_cause": "缺少「推进对话」的目标设定",
+          "solution": "在 Agent 目标中加入「推动情节发展」的要求"
+        }
+      ]
+    },
+    {
+      "category": "Out of Character (OOC)",
+      "category_id": "ooc",
+      "description": "角色发言不符合人设，行为与性格矛盾",
+      "cases": [
+        {
+          "case_id": "BAD_007",
+          "severity": "critical",
+          "scene": "战斗场景",
+          "issue": "勇敢的勇士表现出怯懦",
+          "character_profile": "勇士 - 勇敢、冲动、直率、喜欢冒险",
+          "bad_example": [
+            {"speaker": "勇士", "content": "前面太危险了，我们还是撤退吧...我有点害怕。"}
+          ],
+          "good_example": [
+            {"speaker": "勇士", "content": "就是这种危险才有意思！看我一剑劈开它！"}
+          ],
+          "root_cause": "LLM 生成时未严格遵循人设，或 Prompt 不够强调性格",
+          "solution": "使用 System Message 锁定性格，每次生成前重复人设描述"
+        },
+        {
+          "case_id": "BAD_008",
+          "severity": "high",
+          "scene": "技术讨论",
+          "issue": "文科背景的角色使用专业技术术语",
+          "character_profile": "市场总监 - 文科背景，不懂技术，善于沟通",
+          "bad_example": [
+            {"speaker": "市场总监", "content": "我们的 Kubernetes 集群需要优化 Pod 调度策略，提高资源利用率。"}
+          ],
+          "good_example": [
+            {"speaker": "市场总监", "content": "技术细节我不太懂，但从市场角度看，用户体验需要提升。"}
+          ],
+          "root_cause": "LLM 忽略了角色的知识背景限制",
+          "solution": "在人设中明确「知识边界」，限制专业领域"
+        },
+        {
+          "case_id": "BAD_009",
+          "severity": "medium",
+          "scene": "日常对话",
+          "issue": "严肃角色突然开玩笑",
+          "character_profile": "严肃的教授 - 古板、认真、不苟言笑",
+          "bad_example": [
+            {"speaker": "教授", "content": "哈哈哈，这个笑话太好笑了！我要发朋友圈！"}
+          ],
+          "good_example": [
+            {"speaker": "教授", "content": "这个话题缺乏学术价值，我们还是讨论正事吧。"}
+          ],
+          "root_cause": "对话氛围影响了角色性格表现",
+          "solution": "在 Prompt 中强调「保持一贯的性格，不受他人影响」"
+        }
+      ]
+    },
+    {
+      "category": "记忆混乱",
+      "category_id": "memory_confusion",
+      "description": "角色遗忘之前的对话内容，或混淆群聊和私聊信息",
+      "cases": [
+        {
+          "case_id": "BAD_010",
+          "severity": "high",
+          "scene": "持续对话",
+          "issue": "角色忘记5轮前说过的话",
+          "bad_example": [
+            {"round": 1, "speaker": "A", "content": "我最讨厌吃胡萝卜。"},
+            {"round": 6, "speaker": "A", "content": "胡萝卜是我最喜欢的蔬菜！"}
+          ],
+          "good_example": [
+            {"round": 1, "speaker": "A", "content": "我最讨厌吃胡萝卜。"},
+            {"round": 6, "speaker": "A", "content": "虽然我不喜欢胡萝卜，但营养确实很好。"}
+          ],
+          "root_cause": "记忆窗口太短，或未使用 RAG 语义检索",
+          "solution": "使用 RAG 系统，检索历史相关发言"
+        },
+        {
+          "case_id": "BAD_011",
+          "severity": "critical",
+          "scene": "群聊+私聊",
+          "issue": "角色在群聊中泄露私聊内容",
+          "bad_example": [
+            {"type": "private", "speaker": "用户", "to": "A", "content": "别告诉B，我其实不喜欢他。"},
+            {"type": "group", "speaker": "A", "content": "用户刚才私下跟我说不喜欢B..."}
+          ],
+          "good_example": [
+            {"type": "private", "speaker": "用户", "to": "A", "content": "别告诉B，我其实不喜欢他。"},
+            {"type": "group", "speaker": "A", "content": "（保持沉默，或巧妙回避）"}
+          ],
+          "root_cause": "记忆系统未正确区分可见性，或 Prompt 未强调保密",
+          "solution": "在记忆中标记可见性，Prompt 强调「不能泄露私聊」"
+        }
+      ]
+    }
+  ],
+  "statistics": {
+    "total_cases": 11,
+    "by_severity": {
+      "critical": 2,
+      "high": 5,
+      "medium": 4
+    },
+    "by_category": {
+      "convergence": 2,
+      "mechanical_rotation": 2,
+      "repetition": 2,
+      "ooc": 3,
+      "memory_confusion": 2
+    }
+  },
+  "improvement_tracking": {
+    "baseline_version": "v2.2.0",
+    "current_version": "v3.2.0",
+    "resolved_cases": [
+      {
+        "case_id": "BAD_003",
+        "resolved_in": "v3.0.0",
+        "solution_applied": "引入 CrewAI Agent 自主决策机制"
+      },
+      {
+        "case_id": "BAD_010",
+        "resolved_in": "v3.2.0",
+        "solution_applied": "引入 RAG 混合检索系统"
+      }
+    ],
+    "remaining_issues": [
+      "BAD_001", "BAD_002", "BAD_004", "BAD_005",
+      "BAD_006", "BAD_007", "BAD_008", "BAD_009", "BAD_011"
+    ]
+  },
+  "usage_guide": {
+    "for_developers": "开发时参考这些案例，在 Prompt 和架构设计中避免类似问题",
+    "for_testers": "测试时主动寻找这些模式，验证系统是否存在相同问题",
+    "for_researchers": "分析 Bad Case 的根本原因，提出系统性改进方案"
+  }
+}

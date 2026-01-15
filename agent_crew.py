@@ -81,35 +81,71 @@ class CharacterAgentCrew:
 
     def run_conversation_round(self,
                                user_message: Optional[str] = None,
-                               character_memories: Optional[Dict[str, List]] = None) -> List[Dict[str, str]]:
+                               character_memories: Optional[Dict[str, List]] = None,
+                               single_speaker: bool = False,
+                               next_speaker_index: int = 0) -> tuple[List[Dict[str, str]], int]:
         """
         运行一轮对话
 
         Args:
             user_message: 用户输入（可选，如果为 None 则是自主对话）
             character_memories: 角色的私有记忆 {角色名: [记忆列表]}
+            single_speaker: 是否单次发言模式（v3.1.1 新增）
+            next_speaker_index: 下一个发言的角色索引（仅在 single_speaker=True 时使用）
 
         Returns:
-            对话结果 [{'speaker': '...', 'content': '...'}, ...]
+            (对话结果, 下一个发言者索引)
+            - 对话结果: [{'speaker': '...', 'content': '...'}, ...]
+            - 下一个发言者索引: 用于轮流发言
         """
 
         # 构建上下文
         context = self._build_context(user_message, character_memories)
 
+        # v3.1.1: 单次发言模式 - 只为指定角色创建任务
+        if single_speaker:
+            # 确保索引有效
+            speaker_index = next_speaker_index % len(self.agents)
+            agents_to_run = [self.agents[speaker_index]]
+            agent_indices = [speaker_index]
+        else:
+            # 多人模式 - 所有角色都参与
+            agents_to_run = self.agents
+            agent_indices = list(range(len(self.agents)))
+
         # 创建对话任务
         tasks = []
-        for agent in self.agents:
-            # 每个 Agent 独立决定是否发言
-            task_description = f"""
+        for agent in agents_to_run:
+            # v3.1.1: 根据是否有用户输入，调整任务描述
+            if user_message:
+                # 有用户输入：强调要回应用户
+                task_description = f"""
 {context}
 
-作为 {agent.role}，请决定：
+作为 {agent.role}，用户刚才说了话，请决定如何回应：
+1. 你是否想对用户的话做出回应？
+2. 如果回应，你想说什么？
+
+规则：
+- 用户刚才说："{user_message}"
+- 你应该认真考虑用户的话，并根据你的性格和记忆做出回应
+- 如果你觉得这轮不适合发言，可以保持沉默（输出：PASS）
+- 如果要发言，直接输出你想说的话（一句话，不要加角色名）
+- 基于你的完整记忆（包括私聊）来决定
+"""
+            else:
+                # 自主对话：自由决定是否发言
+                task_description = f"""
+{context}
+
+作为 {agent.role}，这是一轮自主对话（没有用户输入），请决定：
 1. 你是否想在这轮对话中发言？
 2. 如果发言，你想说什么？
 
 规则：
 - 如果你觉得没有必要发言，可以保持沉默（输出：PASS）
 - 如果要发言，直接输出你想说的话（一句话，不要加角色名）
+- 可以主动提出话题，或回应其他角色
 - 基于你的完整记忆（包括私聊）来决定
 """
 
@@ -122,7 +158,7 @@ class CharacterAgentCrew:
 
         # 创建 Crew 并执行
         crew = Crew(
-            agents=self.agents,
+            agents=agents_to_run,  # v3.1.1: 使用筛选后的 agents
             tasks=tasks,
             process=Process.sequential,  # 顺序执行
             verbose=False
@@ -132,8 +168,8 @@ class CharacterAgentCrew:
         try:
             result = crew.kickoff()
 
-            # 解析结果
-            responses = self._parse_crew_result(result, tasks)
+            # 解析结果（需要传入正确的索引）
+            responses = self._parse_crew_result(result, tasks, agent_indices)
 
             # 更新对话历史
             if user_message:
@@ -146,12 +182,24 @@ class CharacterAgentCrew:
                 if resp['content'] != 'PASS':
                     self.conversation_history.append(resp)
 
-            return responses
+            # v3.1.1: 计算下一个发言者索引（轮流）
+            if single_speaker:
+                next_index = (next_speaker_index + 1) % len(self.agents)
+            else:
+                next_index = 0  # 多人模式下索引无意义
+
+            return responses, next_index
 
         except Exception as e:
             st.error(f"CrewAI 执行错误: {str(e)}")
             # 降级到简单模式
-            return self._fallback_simple_generation(user_message)
+            fallback_responses = self._fallback_simple_generation(user_message)
+            # 计算下一个索引
+            if single_speaker:
+                next_index = (next_speaker_index + 1) % len(self.agents)
+            else:
+                next_index = 0
+            return fallback_responses, next_index
 
     def _build_context(self,
                        user_message: Optional[str],
@@ -194,13 +242,22 @@ class CharacterAgentCrew:
 
         return "\n".join(context_parts)
 
-    def _parse_crew_result(self, result, tasks) -> List[Dict[str, str]]:
-        """解析 CrewAI 的返回结果"""
+    def _parse_crew_result(self, result, tasks, agent_indices: List[int]) -> List[Dict[str, str]]:
+        """
+        解析 CrewAI 的返回结果
+
+        Args:
+            result: CrewAI 返回结果
+            tasks: 任务列表
+            agent_indices: 对应的 agent 索引列表（用于单次发言模式）
+        """
         responses = []
 
         # CrewAI 返回的是最终结果，我们需要从 tasks 中提取
         for i, task in enumerate(tasks):
-            agent_name = self.characters[i]['name']
+            # v3.1.1: 使用 agent_indices 获取正确的角色名
+            agent_idx = agent_indices[i]
+            agent_name = self.characters[agent_idx]['name']
 
             # 尝试获取任务输出
             try:

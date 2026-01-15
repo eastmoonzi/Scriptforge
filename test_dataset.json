@@ -1,0 +1,212 @@
+{
+  "dataset_name": "GroupChat 评测数据集",
+  "version": "1.0.0",
+  "created_at": "2026-01-15",
+  "description": "用于评估多角色对话系统质量的测试数据集，包含高质量和低质量样本",
+  "scenarios": [
+    {
+      "id": "scenario_001",
+      "name": "古堡探险 - 高质量样本",
+      "quality": "high",
+      "scene": "三位冒险者在古堡中探险，寻找传说中的宝藏",
+      "characters": {
+        "勇士": "勇敢、冲动、直率、喜欢冒险",
+        "法师": "聪明、谨慎、理性、善于分析",
+        "盗贼": "狡猾、机智、谨慎、擅长潜行"
+      },
+      "conversations": [
+        {"speaker": "勇士", "content": "前面的门看起来很可疑，让我用剑劈开它！"},
+        {"speaker": "法师", "content": "等等！门上有魔法符文，贸然触碰可能触发陷阱。让我先解析一下..."},
+        {"speaker": "盗贼", "content": "嘿，你们俩都冷静点。我去看看锁眼，也许能开锁。"},
+        {"speaker": "勇士", "content": "哈！动作太慢了，我直接上！"},
+        {"speaker": "法师", "content": "这个符文是古代防护魔法...需要特定咒语才能解开。"},
+        {"speaker": "盗贼", "content": "太复杂了，我的开锁技能对魔法锁没用。"},
+        {"speaker": "法师", "content": "让我试试解除咒语...「阿尔卡纳·迪斯佩尔」"},
+        {"speaker": "勇士", "content": "成功了！走，进去看看有什么宝藏！"},
+        {"speaker": "盗贼", "content": "小心地板，我感觉到机关的气息..."}
+      ],
+      "expected_metrics": {
+        "cpd_score": ">70",
+        "de_score": ">75",
+        "ooc_rate": "<10"
+      }
+    },
+    {
+      "id": "scenario_002",
+      "name": "古堡探险 - 低质量样本（角色趋同）",
+      "quality": "low",
+      "issue": "角色性格趋同，都表现得很谨慎",
+      "scene": "三位冒险者在古堡中探险，寻找传说中的宝藏",
+      "characters": {
+        "勇士": "勇敢、冲动、直率、喜欢冒险",
+        "法师": "聪明、谨慎、理性、善于分析",
+        "盗贼": "狡猾、机智、谨慎、擅长潜行"
+      },
+      "conversations": [
+        {"speaker": "勇士", "content": "这里看起来很危险，我们要小心一点。"},
+        {"speaker": "法师", "content": "是的，我们确实要小心，不能大意。"},
+        {"speaker": "盗贼", "content": "我也觉得要谨慎行事，不能冒险。"},
+        {"speaker": "勇士", "content": "那我们慢慢往前走吧，注意周围。"},
+        {"speaker": "法师", "content": "好的，我们一起慢慢走，互相照应。"},
+        {"speaker": "盗贼", "content": "对，我们要团结一致，小心前进。"}
+      ],
+      "expected_metrics": {
+        "cpd_score": "<40",
+        "de_score": "任意",
+        "ooc_rate": ">30"
+      }
+    },
+    {
+      "id": "scenario_003",
+      "name": "创业公司会议 - 高质量样本",
+      "quality": "high",
+      "scene": "创业公司讨论新产品策略",
+      "characters": {
+        "CEO": "有远见、激进、敢于冒险、善于激励团队",
+        "CTO": "技术完美主义、谨慎、注重细节",
+        "CFO": "数据驱动、保守、风险意识强"
+      },
+      "conversations": [
+        {"speaker": "CEO", "content": "我们必须在下个月上线新功能，抢占市场先机！"},
+        {"speaker": "CTO", "content": "等等，代码还有23个未解决的bug，需要至少2周测试时间。"},
+        {"speaker": "CFO", "content": "根据财务模型，如果延期一个月，我们将失去18%的预期收入。"},
+        {"speaker": "CEO", "content": "那就加班加点！这是决定公司生死的关键时刻！"},
+        {"speaker": "CTO", "content": "强行上线会导致技术债务，后期维护成本会翻倍。"},
+        {"speaker": "CFO", "content": "我同意CTO的看法，质量问题会带来客诉成本，上季度就花了50万处理。"},
+        {"speaker": "CEO", "content": "好吧...那我们折中：核心功能先上线，其他功能分阶段发布。"},
+        {"speaker": "CTO", "content": "这样可以，我列个优先级清单。"},
+        {"speaker": "CFO", "content": "我更新下预算分配，测试团队需要增加2个人手。"}
+      ],
+      "expected_metrics": {
+        "cpd_score": ">75",
+        "de_score": ">80",
+        "ooc_rate": "<5"
+      }
+    },
+    {
+      "id": "scenario_004",
+      "name": "创业公司会议 - 低质量样本（重复、无效）",
+      "quality": "low",
+      "issue": "对话重复，信息密度低",
+      "scene": "创业公司讨论新产品策略",
+      "characters": {
+        "CEO": "有远见、激进、敢于冒险",
+        "CTO": "技术完美主义、谨慎",
+        "CFO": "数据驱动、保守"
+      },
+      "conversations": [
+        {"speaker": "CEO", "content": "我觉得这个方案可以。"},
+        {"speaker": "CTO", "content": "我也觉得这个方案可以。"},
+        {"speaker": "CFO", "content": "我同意，这个方案可以。"},
+        {"speaker": "CEO", "content": "那就这样吧。"},
+        {"speaker": "CTO", "content": "好的，就这样吧。"},
+        {"speaker": "CFO", "content": "行，那就这样。"}
+      ],
+      "expected_metrics": {
+        "cpd_score": "<30",
+        "de_score": "<40",
+        "ooc_rate": ">20"
+      }
+    },
+    {
+      "id": "scenario_005",
+      "name": "剧本创作讨论 - 高质量样本",
+      "quality": "high",
+      "scene": "三位编剧讨论新剧本的情节设计",
+      "characters": {
+        "悬疑作家": "擅长设置悬念、埋伏笔、逻辑严密",
+        "言情作家": "关注情感细节、人物关系、情绪渲染",
+        "科幻作家": "注重世界观、科技设定、想象力"
+      },
+      "conversations": [
+        {"speaker": "悬疑作家", "content": "第三幕需要一个大反转，主角发现自己一直被利用。"},
+        {"speaker": "言情作家", "content": "但这会伤害主角和女主的感情线，观众会觉得他们的爱情是假的。"},
+        {"speaker": "科幻作家", "content": "如果加入平行宇宙设定呢？不同时间线的主角做出不同选择。"},
+        {"speaker": "悬疑作家", "content": "这个点子不错！可以在第二幕埋下量子纠缠的伏笔..."},
+        {"speaker": "言情作家", "content": "那我可以设计两条时间线的情感对比，一个悲剧一个喜剧。"},
+        {"speaker": "科幻作家", "content": "我来完善技术细节，确保科幻设定经得起推敲。"},
+        {"speaker": "悬疑作家", "content": "完美！这样既有悬念又有情感深度，还有硬核科幻元素。"}
+      ],
+      "expected_metrics": {
+        "cpd_score": ">80",
+        "de_score": ">85",
+        "ooc_rate": "<5"
+      }
+    },
+    {
+      "id": "scenario_006",
+      "name": "餐厅点餐 - 中等质量样本",
+      "quality": "medium",
+      "scene": "三个朋友在餐厅讨论点什么菜",
+      "characters": {
+        "美食家": "对美食有研究、挑剔、喜欢尝试新菜",
+        "节俭者": "注重性价比、不喜欢浪费",
+        "随和者": "好说话、不挑食、配合大家"
+      },
+      "conversations": [
+        {"speaker": "美食家", "content": "我推荐点这家的招牌菜——松露烩饭，据说主厨是法国回来的。"},
+        {"speaker": "节俭者", "content": "168一份？太贵了吧，这个价格够吃三顿了。"},
+        {"speaker": "随和者", "content": "那就点个中等价位的吧，大家都能接受。"},
+        {"speaker": "美食家", "content": "好菜就得用好食材，贵是有道理的。"},
+        {"speaker": "节俭者", "content": "我觉得普通的饭菜也挺好吃的，没必要那么贵。"},
+        {"speaker": "随和者", "content": "要不我们点一份松露饭大家share，其他点普通的？"}
+      ],
+      "expected_metrics": {
+        "cpd_score": "50-70",
+        "de_score": "60-75",
+        "ooc_rate": "10-20"
+      }
+    }
+  ],
+  "additional_test_cases": [
+    {
+      "id": "test_007",
+      "name": "游戏竞技 - 团队配合",
+      "quality": "high",
+      "scene": "游戏战队在比赛中的即时沟通",
+      "characters": {
+        "指挥": "冷静、果断、全局观强",
+        "打野": "激进、爱秀操作、自信",
+        "辅助": "细心、团队意识强、愿意牺牲"
+      },
+      "conversations": [
+        {"speaker": "指挥", "content": "敌方打野在上半区，下路可以压线。"},
+        {"speaker": "打野", "content": "我直接反他蓝buff，然后gank中路！"},
+        {"speaker": "辅助", "content": "ADC没闪现，我保护好他，你们放心打。"},
+        {"speaker": "指挥", "content": "小心对面支援，看小地图！"},
+        {"speaker": "打野", "content": "拿到一血了！哈哈，看我操作！"},
+        {"speaker": "辅助", "content": "下路被gank了，我把控制交了，ADC活下来了。"}
+      ]
+    },
+    {
+      "id": "test_008",
+      "name": "家庭聚会 - 日常对话",
+      "quality": "high",
+      "scene": "三代人在讨论晚餐吃什么",
+      "characters": {
+        "奶奶": "传统、节俭、唠叨但关心家人",
+        "妈妈": "实际、忙碌、协调家庭",
+        "孙女": "年轻、追求时尚、有自己想法"
+      },
+      "conversations": [
+        {"speaker": "奶奶", "content": "今天我做了你们爱吃的红烧肉，多吃点补身体。"},
+        {"speaker": "妈妈", "content": "妈，您别忙活了，我点外卖吧，您也歇歇。"},
+        {"speaker": "孙女", "content": "我想吃日料，那家新开的寿司店评分很高！"},
+        {"speaker": "奶奶", "content": "外面的东西又贵又不干净，还是家里做的好。"},
+        {"speaker": "妈妈", "content": "女儿，奶奶做的菜确实更健康，咱们今天就在家吃吧。"},
+        {"speaker": "孙女", "content": "好吧...那明天我请你们去吃日料！"}
+      ]
+    }
+  ],
+  "metadata": {
+    "total_scenarios": 8,
+    "high_quality_count": 5,
+    "low_quality_count": 2,
+    "medium_quality_count": 1,
+    "annotation_guide": {
+      "cpd_score": "人设离散度，0-100分，衡量角色性格差异化程度",
+      "de_score": "对话有效率，0-100分，衡量对话信息密度",
+      "ooc_rate": "OOC率（Out of Character），0-100%，越低越好"
+    }
+  }
+}

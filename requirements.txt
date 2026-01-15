@@ -9,5 +9,8 @@ crewai-tools>=1.7.0
 langchain-google-genai>=4.1.0
 google-generativeai>=0.3.0
 
+# RAG - Vector Database (v3.2.0+)
+chromadb>=0.4.0
+
 # Python Version
 # Python >= 3.10 required
