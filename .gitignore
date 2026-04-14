@@ -68,3 +68,10 @@ chroma_db/
 
 # 虚拟环境（补充）
 .venv/
+
+# Node.js / Frontend
+node_modules/
+.next/
+out/
+frontend/.next/
+frontend/node_modules/

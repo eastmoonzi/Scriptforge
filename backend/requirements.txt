@@ -1,0 +1,13 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+screenplain>=0.9.0
+sse-starlette>=1.6.0
+
+# Existing deps (for services)
+crewai>=1.7.0
+crewai-tools>=1.7.0
+langchain-google-genai>=4.1.0
+google-genai>=1.0.0
+chromadb>=0.4.0

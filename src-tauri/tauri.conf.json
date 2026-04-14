@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "Scriptforge",
+  "version": "0.1.0",
+  "identifier": "com.scriptforge.desktop",
+  "build": {
+    "frontendDist": "../frontend/out",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "cd ../frontend && npm run build",
+    "beforeDevCommand": "cd ../frontend && npm run dev"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Scriptforge",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": true,
+        "center": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/scriptforge-server"
+    ]
+  },
+  "plugins": {}
+}

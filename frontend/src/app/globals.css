@@ -1,0 +1,214 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ============================================
+   Fountain Screenplay Styles
+   ============================================ */
+
+.fountain-page {
+  font-family: 'Courier Prime', 'Courier New', Courier, monospace;
+  line-height: 1.5;
+}
+
+.fountain-editor .ProseMirror {
+  min-height: 100%;
+  padding: 2rem 4rem;
+  max-width: 8.5in;
+  margin: 0 auto;
+}
+
+.fountain-editor .ProseMirror:focus {
+  outline: none;
+}
+
+.fountain-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+  white-space: pre-line;
+}
+
+/* Scene Heading */
+.fountain-scene-heading {
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-top: 2em;
+  margin-bottom: 1em;
+  letter-spacing: 0.02em;
+  border-left: 3px solid #3b82f6;
+  padding-left: 0.5em;
+}
+
+.dark .fountain-scene-heading {
+  border-left-color: #60a5fa;
+}
+
+/* Character Name */
+.fountain-character {
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0;
+  margin-left: auto;
+  margin-right: auto;
+  width: 60%;
+}
+
+/* Dialogue */
+.fountain-dialogue {
+  text-align: left;
+  font-size: 0.875rem;
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  margin-left: auto;
+  margin-right: auto;
+  width: 60%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Parenthetical */
+.fountain-parenthetical {
+  text-align: left;
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: #6b7280;
+  margin-top: 0;
+  margin-bottom: 0;
+  margin-left: auto;
+  margin-right: auto;
+  width: 40%;
+}
+
+.dark .fountain-parenthetical {
+  color: #9ca3af;
+}
+
+/* Action */
+.fountain-action {
+  font-size: 0.875rem;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+/* Transition */
+.fountain-transition {
+  text-align: right;
+  text-transform: uppercase;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+/* Dark mode overrides */
+.dark .fountain-scene-heading {
+  color: #e5e7eb;
+}
+
+.dark .fountain-character {
+  color: #d1d5db;
+}
+
+.dark .fountain-dialogue {
+  color: #e5e7eb;
+}
+
+.dark .fountain-action {
+  color: #d1d5db;
+}
+
+.dark .fountain-transition {
+  color: #9ca3af;
+}
+
+/* Scrollbar */
+.fountain-page::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fountain-page::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fountain-page::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.dark .fountain-page::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+
+@media print {
+  body {
+    background: white;
+    color: black;
+    font-family: 'Courier Prime', 'Courier New', Courier, monospace;
+  }
+
+  @page {
+    size: US Letter;
+    margin: 1in;
+  }
+
+  .fountain-editor .ProseMirror {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Hide non-print UI */
+  .no-print,
+  nav,
+  header,
+  footer,
+  aside {
+    display: none !important;
+  }
+
+  .fountain-scene-heading {
+    page-break-after: avoid;
+    border-left: none;
+    padding-left: 0;
+  }
+
+  .fountain-character {
+    page-break-after: avoid;
+  }
+
+  .fountain-dialogue {
+    page-break-before: avoid;
+  }
+}
