@@ -13,6 +13,7 @@ import CharacterManager from '@/components/AIPanel/CharacterManager'
 import SceneSettings from '@/components/AIPanel/SceneSettings'
 import GenerationControls from '@/components/AIPanel/GenerationControls'
 import OutlineNavigator from '@/components/AIPanel/OutlineNavigator'
+import ChatPanel from '@/components/AIPanel/ChatPanel'
 
 // TipTap must be client-only (no SSR)
 const FountainEditor = dynamic(() => import('@/components/Editor/FountainEditor'), {
@@ -29,6 +30,7 @@ const panelTabs = [
   { key: 'scene' as const, label: '场景' },
   { key: 'generation' as const, label: 'AI' },
   { key: 'outline' as const, label: '大纲' },
+  { key: 'chat' as const, label: '对话' },
 ]
 
 export default function Home() {
@@ -101,6 +103,7 @@ export default function Home() {
             {activePanel === 'scene' && <SceneSettings />}
             {activePanel === 'generation' && <GenerationControls />}
             {activePanel === 'outline' && <OutlineNavigator />}
+            {activePanel === 'chat' && <ChatPanel />}
           </div>
         </div>
       </div>

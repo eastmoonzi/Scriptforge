@@ -75,3 +75,9 @@ node_modules/
 out/
 frontend/.next/
 frontend/node_modules/
+
+# Rust / Tauri
+src-tauri/target/
+
+# Database
+backend/data/scriptforge.db
