@@ -1,37 +1,41 @@
 # Scriptforge
 
-AI 驱动的剧本编辑器，支持多角色对白生成、导演模式与 RAG 记忆系统。  
-基于 FastAPI + Next.js + Tauri 构建，使用 Google Gemini / DeepSeek 作为 LLM 后端。
+写剧本的人都知道那种时刻：人物已经在脑子里活了，对白却卡在手指尖，写出来的句子不像那个人说的话。
+
+Scriptforge 从这里出发。后台跑着四个 AI Agent：编剧规划这场戏要去哪里，导演告诉每个角色该怎么演，角色按自己的人设开口说话，审稿人最后检查有没有出戏。生成的对白逐字流入编辑器，你可以随时打断。
+
+编辑器本身支持 Fountain 格式。写完即是标准剧本，导出可直接交付 Final Draft。
 
 ---
 
-## 核心特性
+## 它是怎么工作的
 
-- **Fountain 原生支持**：直接编写 Fountain 格式剧本，支持导出为 FDX / HTML / PDF
-- **多智能体对白生成**：编剧 → 导演 → 角色 → 审稿人四级流水线，生成高质量角色对白
-- **双重记忆系统**：群聊公共记忆 + 角色私有记忆，基于 ChromaDB RAG 实现上下文连贯
-- **风格模板引擎**：少样本戏剧风格模板 + 反模式示例，精准控制生成风格
-- **对话质量评测**：CPD（角色个性分歧）/ DE（对话效率）/ OOC（出戏率）三项量化指标
-- **桌面原生应用**：Tauri 封装，跨平台支持，后端以 sidecar 方式内嵌
+每个角色背后有两条记忆：所有人共享的群聊历史，以及只属于这个角色的私密信息。生成前，系统从 ChromaDB 向量库里召回最相关的片段，拼进 prompt——角色不会失忆，也不会把秘密随便说出去。
+
+风格由模板控制。悬疑、喜剧、现实主义三套预设，每套都带正面示例和反面示例，用 few-shot 的方式约束模型的语言风格。系统也会根据场景描述里的关键词自动推荐合适的模板。
+
+生成结束后，三项指标量化评估这轮对白：CPD 看各角色语言风格是否真的有区分度，DE 检测信息密度和废话率，OOC 由 LLM 直接判断角色有没有说"不像他的话"。
+
+没有 API Key 也能跑——系统用 mock 数据走完整个流程，界面功能全部可用。
 
 ---
 
-## 快速上手
+## 上手
 
-**环境要求**：Python 3.12+、Node.js 18+、Rust（仅桌面版）
+需要 Python 3.12+、Node.js 18+。桌面版额外需要 Rust。
 
 ```bash
-# 1. 启动后端
+# 后端
 cd backend && pip install -r requirements.txt
 cd .. && uvicorn backend.main:app --reload --port 8000
 
-# 2. 启动前端（新开终端）
+# 前端（新开终端）
 cd frontend && npm install && npm run dev
 ```
 
-在浏览器访问 `http://localhost:3000`，在 AI 面板中填写 API Key 即可开始使用。
+打开 `http://localhost:3000`，在 AI 面板填写 Gemini 或 DeepSeek 的 API Key，添加几个角色和人设，点「生成下一段」。
 
-也可以通过 `.env` 文件预先配置：
+也可以在根目录放 `.env` 文件预配置：
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
@@ -39,27 +43,14 @@ GEMINI_API_KEY=your_gemini_api_key
 
 ---
 
-## 架构概览
+## 技术构成
 
-```
-src-tauri/   Tauri 桌面壳（Rust）
-frontend/    Next.js + TipTap 编辑器 + Zustand 状态管理
-backend/     FastAPI + ChromaDB + SQLite
-```
+后端是 FastAPI，ChromaDB 做向量记忆，CrewAI 驱动多 Agent 流水线。前端是 Next.js 16 + React 19 + TipTap，Zustand 管状态。桌面壳是 Tauri 2，把 Python 后端作为 sidecar 内嵌，用户无需手动启动服务。LLM 支持 Google Gemini 和 DeepSeek，默认跑 `gemini-2.0-flash-exp`。
 
----
+CrewAI 不可用时降级为顺序调用，再失败则降级为 mock，每层都有兜底。
 
-## 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 后端 | Python 3.12, FastAPI, ChromaDB, CrewAI |
-| AI   | Google Gemini (`gemini-2.0-flash-exp`), DeepSeek |
-| 前端 | Next.js 16, React 19, TipTap, Tailwind CSS 4 |
-| 桌面 | Tauri 2, Rust |
+项目数据存本地 SQLite，向量记忆存本地 ChromaDB，浏览器端每五秒 localStorage 自动保存。没有任何数据上传到远程服务器。
 
 ---
-
-## License
 
 MIT © 2026 Eastmoon
