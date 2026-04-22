@@ -16,25 +16,61 @@ from collections import Counter, defaultdict
 import math
 
 
+# Provider → OpenAI-compatible base URL mapping
+_PROVIDER_BASE_URLS: dict = {
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com",
+    "kimi": "https://api.moonshot.cn/v1",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "minimax": "https://api.minimax.chat/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+}
+
+
+def _tokenize(text: str) -> list[str]:
+    """Tokenize text — use jieba for Chinese, regex for non-Chinese."""
+    if any('\u4e00' <= ch <= '\u9fff' for ch in text):
+        try:
+            import jieba
+            return [w for w in jieba.lcut(text) if w.strip()]
+        except ImportError:
+            pass
+    return re.findall(r'\w+', text.lower())
+
+
 class EvaluationMetrics:
     """评测指标计算器"""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None,
+                 provider: str = "gemini",
+                 model: str = "gemini-2.0-flash-exp",
+                 base_url: str = ""):
         """
         初始化评测系统
 
         Args:
-            api_key: Gemini API Key（用于语义分析）
+            api_key: LLM API Key（用于 OOC 语义分析）
+            provider: LLM 提供商（gemini / openai / deepseek / ...）
+            model: 模型 ID
+            base_url: 自定义 OpenAI 兼容端点
         """
         self.api_key = api_key
+        self._provider = provider
+        self._model = model
         self.llm = None
 
         if api_key:
             try:
-                import google.genai as genai
-                self.llm = genai.Client(api_key=api_key)
+                if provider == "gemini":
+                    import google.genai as genai
+                    self.llm = genai.Client(api_key=api_key)
+                else:
+                    from openai import OpenAI
+                    url = base_url or _PROVIDER_BASE_URLS.get(provider, "")
+                    if url:
+                        self.llm = OpenAI(api_key=api_key, base_url=url)
             except ImportError:
-                print("⚠️ google-genai 未安装，将使用基础指标")
+                print("⚠️ LLM SDK 未安装，将使用基础指标")
 
     # ==================== 1. 人设离散度（CPD）====================
 
@@ -102,7 +138,7 @@ class EvaluationMetrics:
             words = []
             for msg in messages:
                 # 移除标点，分词
-                words.extend(re.findall(r'\w+', msg.lower()))
+                words.extend(_tokenize(msg))
 
             # 词频统计
             character_vocabs[char] = Counter(words)
@@ -254,7 +290,7 @@ class EvaluationMetrics:
         all_words = []
         for msg in conversations:
             content = msg.get('content', '')
-            words = re.findall(r'\w+', content.lower())
+            words = _tokenize(content)
             all_words.extend(words)
 
         if not all_words:
@@ -310,8 +346,8 @@ class EvaluationMetrics:
 
     def _simple_text_similarity(self, text1: str, text2: str) -> float:
         """简单的文本相似度计算（基于词汇重叠）"""
-        words1 = set(re.findall(r'\w+', text1.lower()))
-        words2 = set(re.findall(r'\w+', text2.lower()))
+        words1 = set(_tokenize(text1))
+        words2 = set(_tokenize(text2))
 
         if not words1 or not words2:
             return 0
@@ -408,12 +444,19 @@ class EvaluationMetrics:
 请回答：这条发言是否符合该角色的性格？（只需回答"符合"或"不符合"，不要解释）
 """
 
-            response = self.llm.models.generate_content(
-                model='gemini-2.0-flash-exp',
-                contents=prompt
-            )
+            if self._provider == "gemini":
+                response = self.llm.models.generate_content(
+                    model=self._model,
+                    contents=prompt
+                )
+                result = response.text.strip()
+            else:
+                response = self.llm.chat.completions.create(
+                    model=self._model,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                result = (response.choices[0].message.content or "").strip()
 
-            result = response.text.strip()
             return '不符合' in result
 
         except Exception as e:

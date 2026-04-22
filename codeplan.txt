@@ -1,0 +1,285 @@
+╭─── Claude Code v2.1.114 ─────────────────────────────────────────────────────╮
+│                                                    │ Recent activity         │
+│                 Welcome back Allen!                │ No recent activity      │
+│                                                    │ ─────────────────────── │
+│                      ▗ ▗   ▖ ▖                     │ Opus 4.7 is here        │
+│                                                    │                         │
+│                        ▘▘ ▝▝                       │ Welcome to Opus 4.7     │
+│       Sonnet 4.6 · Claude Pro ·                    │ xhigh!                  │
+│       eastmoonxiaozi@gmail.com's Organization      │                         │
+│                ~/codes/Scriptforge-1               │ /effort to tune speed … │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ /model opusplan                                                               
+  ⎿  Set model to Opus in plan mode, else Sonnet
+
+❯  以专业用户的视角评价此项目并给出建议                                         
+
+⏺ 我将以专业视角评估这个 AI 编剧项目。先并行探索代码库的三个维度。
+
+⏺ 3 Explore agents finished (ctrl+o to expand)
+   ├─ 评估后端架构质量 · 13 tool uses · 32.2k tokens
+   │  ⎿  Done
+   ├─ 评估前端质量与用户体验 · 20 tool uses · 50.9k tokens
+   │  ⎿  Done
+   └─ 评估 AI 核心能力与产品力 · 4 tool uses · 12.2k tokens
+      ⎿  Done
+
+⏺ 已收到三份专业评审结果。现在把结论汇总写入计划文件。
+
+⏺ Updated plan
+  ⎿  /plan to preview
+  ⎿  User rejected Claude's plan:
+     ╭─────────────────────────────────────────────────────────────────────────╮
+     │ Scriptforge 专业评审与改进计划                                          │
+     │                                                                         │
+     │ Context                                                                 │
+     │                                                                         │
+     │ 用户（项目负责人）请求以专业视角评价 Scriptforge（FastAPI + Next.js +   │
+     │ Tauri 的 AI 编剧编辑器）并给出建议。本文件汇总后端架构、前端工程、AI    │
+     │ 核心能力三个维度的独立深度评审结果，按"先修复致命 Bug → 再重构架构 →    │
+     │ 最后聚焦产品"的优先级排序，给出可执行的改进路径。                       │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 一、总体判断                                                            │
+     │                                                                         │
+     │ 定位：技术层面是"能 demo 但难上量"的研究原型。模板系统与 dual-memory    │
+     │ 产品直觉是资产，但架构混乱、安全裸奔、评估指标数学错误、AI 编排为       │
+     │ cosplay。                                                               │
+     │                                                                         │
+     │ 综合评分                                                                │
+     │                                                                         │
+     │ ┌─────────────┬──────┬───────────────────────────────────────────────── │
+     │ ───┐                                                                    │
+     │ │    维度     │  分  │                      核心问题                    │
+     │    │                                                                    │
+     │ ├─────────────┼──────┼───────────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ 后端架构    │ 4/10 │ 三套平行核心副本 + Streamlit shim + 单例可变状态 │
+     │    │                                                                    │
+     │ ├─────────────┼──────┼───────────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ 前端工程    │ 5/10 │ 单体 Zustand store + 337 行巨型组件 + SSE        │
+     │ 解析脆弱 │                                                              │
+     │ ├─────────────┼──────┼───────────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ AI 多 Agent │ 5/10 │ CrewAI 退化为顺序调用，未用编排/委派/共享记忆    │
+     │    │                                                                    │
+     │ ├─────────────┼──────┼───────────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ Prompt 工程 │ 4/10 │ 缺 structured output，bare except: 吞 JSON 错    │
+     │    │                                                                    │
+     │ ├─────────────┼──────┼───────────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ 评估体系    │ 3/10 │ CPD 对中文分词数学错误，Reviewer 超限强制 pass   │
+     │    │                                                                    │
+     │ ├─────────────┼──────┼───────────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ RAG 设计    │ 4/10 │ Collection 名带时间戳，每次实例化丢历史记忆      │
+     │    │                                                                    │
+     │ └─────────────┴──────┴───────────────────────────────────────────────── │
+     │ ───┘                                                                    │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 二、必须立即修复的致命 Bug（P0）                                        │
+     │                                                                         │
+     │ 1. RAG 记忆每次冷启动 — memory_rag.py:42 collection_name =              │
+     │ f"memories_{datetime.now()...}"。每次 RAGMemorySystem() 初始化都建新    │
+     │ collection，历史记忆永远检索不到。仅靠 memory_service._sessions         │
+     │ 内存缓存勉强能用，进程重启即丢。Fix：collection_name 由外部 session_id  │
+     │ 传入。                                                                  │
+     │ 2. API Key 泄漏路径 — routers/generation.py:44,67,81,244,285 把 api_key │
+     │  放 pydantic body；main.py:76-82 全局 handler exc_info=True 会把整个    │
+     │ request 打进日志；pydantic 校验错误默认回显 body。Fix：改 Header        │
+     │ 传递，字段从日志/响应里剥离。                                           │
+     │ 3. 事件循环被阻塞 — routers/generation.py:96,147,206,222,259 全 async   │
+     │ def 端点内直接调同步 Gemini/OpenAI 客户端。一次长生成卡死整个           │
+     │ worker。Fix：用 async SDK，或 run_in_threadpool 包裹。                  │
+     │ 4. Reviewer 强制 pass — director_system.py:216-220 重试超限直接         │
+     │ review_result['pass'] = True。所谓"审核"对质量零约束。Fix：超限应返回   │
+     │ status=rejected，由上层决定是否返给用户。                               │
+     │ 5. CPD 对中文分词失效 — evaluation_system.py 用 re.findall(r'\w+',      │
+     │ msg.lower())。中文不按空格分词，\w+ 把整句当一个 token。整套 CPD        │
+     │ 数学上就是错的。Fix：接入 jieba，或直接改 embedding 余弦距离。          │
+     │ 6. SSE 解析跨 TCP 包截断 — GenerationControls.tsx:95 按 \n 切           │
+     │ chunk，data: 跨包会让 JSON.parse 失败并被 try/catch 静默吞掉 →          │
+     │ 丢对白。Fix：用 TextDecoder({stream:true}) + 行缓冲。                   │
+     │ 7. CORS + 无鉴权 — main.py:64-70 allow_credentials=True 同时            │
+     │ allow_methods=["*"]（浏览器会拒）且全路由无鉴权；/api/health 暴露       │
+     │ gemini_configured。任意站点可烧 token。Fix：收敛                        │
+     │ origins，所有生成路由加 token。                                         │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 三、架构级重构（P1）                                                    │
+     │                                                                         │
+     │ 后端                                                                    │
+     │                                                                         │
+     │ - 收编根目录模块：把 director_system.py、evaluation_system.py、memory_r │
+     │ ag.py、template_manager.py 搬进 backend/core/，删 services/__init__.py  │
+     │ 的 sys.path.insert hack 和三份重复的 PROVIDER_BASE_URLS（generation_ser │
+     │ vice.py:33、director_system.py:13、evaluation_system.py:20）。          │
+     │ - 删除 _compat.py Streamlit                                             │
+     │ shim（backend/services/_compat.py:31,77）：把散落在业务模块里的         │
+     │ st.error/st.spinner 剥离，改用 logging/异常。shim 的 _MockSessionState  │
+     │ 是进程级单例，存在多会话数据串扰风险。                                  │
+     │ - 服务生命周期：routers/generation.py:25-27 的模块级单例改为 FastAPI    │
+     │ 依赖注入；MemoryService._sessions（memory_service.py:29）加 LRU/TTL     │
+     │ 驱逐；project_store.py:39-41 的 SQLite 开 WAL + 单例 connection pool。  │
+     │ - 依赖瘦身：requirements.txt 同时有 CrewAI + langchain-google-genai +   │
+     │ langchain-openai + google-genai + openai + chromadb。对"四阶段          │
+     │ pipeline"这种简单编排，裸 async LLM client + 手写状态机就够了。下掉     │
+     │ crewai 和 langchain 两层，预计减约 200MB 依赖、延迟降 30-40%。Pin       │
+     │ 版本（uv.lock）。                                                       │
+     │                                                                         │
+     │ 前端                                                                    │
+     │                                                                         │
+     │ - 拆 Zustand store（lib/store.ts:35-119）：按领域分 useProjectStore /   │
+     │ useAIStore / useUIStore；TipTap Editor 实例用 context/ref，不进全局     │
+     │ store。sceneCount/pageCount 改 selector 派生，删 updateCounts()         │
+     │ 手动同步。                                                              │
+     │ - 统一 API 层（lib/api.ts）：封装 buildLLMContext() 避免                │
+     │ GenerationControls.tsx:29,111,140,189 的重复 payload 拼接；加 timeout + │
+     │  重试 + 中心化错误提示。                                                │
+     │ - 拆巨型组件：GenerationControls.tsx（337 行）拆出 <ProviderConfigForm> │
+     │  和 useGenerate() hook；SSE 降级逻辑移到 hook                           │
+     │ 内并加幂等保护（避免降级覆盖已 stream 内容）。                          │
+     │ - 复用 fountain 解析：删 EvaluationPanel.tsx:8-36 的自研简化            │
+     │ parser，复用 lib/fountain.ts，避免两套解析器发散。                      │
+     │ - AI 建议走 TipTap API：SuggestionSlot.tsx:39-40 字符串拼接写入剧本绕过 │
+     │  schema 破坏 undo 历史，改 editor.chain().insertContentAt(...)。        │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 四、AI 核心能力重构（P1）                                               │
+     │                                                                         │
+     │ 1. 砍 CrewAI，改 LangGraph 或纯函数链 + structured output：每阶段用     │
+     │ Pydantic schema + response_format=json_schema 强约束 JSON，删掉         │
+     │ director_system.py:327,393,453 的 bare except:。                        │
+     │ 2. CPD 指标换掉：方案 A 用 jieba + TF-IDF 余弦；方案 B 每个角色用       │
+     │ embedding 求质心，测质心两两距离，再叠加 LLM-as-judge 性格一致性        │
+     │ rubric。                                                                │
+     │ 3. 评估不能只看自动指标：overall = (CPD+DE+OOC)/3 当 KPI 会诱导 prompt  │
+     │ 刷分。加 pairwise 人评数据集 + 带 anchor 的 LLM-as-judge。              │
+     │ 4. 评估性能：evaluation_system.py:292-308 _calculate_repetition_rate 是 │
+     │  O(N²)，长剧本会爆 CPU。改向量化/哈希窗口。                             │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 五、UX 与产品定位（P2）                                                 │
+     │                                                                         │
+     │ UX 立即可做                                                             │
+     │                                                                         │
+     │ - 快捷键行为修正：shortcuts.ts:45 Cmd+Enter 直接触发生成而非切          │
+     │ tab；Cmd+S 真正触发持久化而非只设 isSaved=true。                        │
+     │ - 空状态 CTA：无 API Key 时"生成"按钮变"前往设置 API                    │
+     │ Key"，而非静默失败。                                                    │
+     │ - AI 状态单一信号源：收敛 StatusBar + 蓝点 + SuggestionSlot + disabled  │
+     │ 四处状态到一个 reducer。                                                │
+     │ - 暗色模式持久化 + 系统偏好监听（page.tsx:64）；字符串文案集中到        │
+     │ i18n/zh-CN.ts，为国际化留口。                                           │
+     │ - 键盘可访问性：MenuBar.tsx:172-195 下拉加 aria-haspopup / Esc 关闭 /   │
+     │ focus trap；Modal 加焦点陷阱。                                          │
+     │                                                                         │
+     │ 产品定位                                                                │
+     │                                                                         │
+     │ 三条产品线（群聊陪聊 / 自动剧本 /                                       │
+     │ 写作辅助）当前都打不过垂直竞品（Character.AI / Dramatron / Sudowrite）  │
+     │ 。建议聚焦国内"短剧剧本生成"：有真实付费市场，且当前代码未考虑"1 集 2-3 │
+     │  分钟、强钩子节奏、第一秒爆点"等中文短剧特性。围绕该场景打端到端 prompt │
+     │  + template + 评估闭环。                                                │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 六、关键文件清单                                                        │
+     │                                                                         │
+     │ P0 Bug 修复涉及                                                         │
+     │ - /Users/pengchen/codes/Scriptforge-1/memory_rag.py (collection 命名)   │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/routers/generation.py     │
+     │ (API key、阻塞、SSE)                                                    │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/main.py (CORS、日志)      │
+     │ - /Users/pengchen/codes/Scriptforge-1/director_system.py (Reviewer 强制 │
+     │  pass)                                                                  │
+     │ - /Users/pengchen/codes/Scriptforge-1/evaluation_system.py              │
+     │ (中文分词、O(N²))                                                       │
+     │ - /Users/pengchen/codes/Scriptforge-1/frontend/src/components/AIPanel/G │
+     │ enerationControls.tsx (SSE)                                             │
+     │                                                                         │
+     │ P1 架构重构涉及                                                         │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/services/_compat.py       │
+     │ (删除)                                                                  │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/services/__init__.py      │
+     │ (sys.path hack)                                                         │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/services/{generation,dire │
+     │ ctor,memory}_service.py                                                 │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/services/project_store.py │
+     │  (SQLite WAL)                                                           │
+     │ - /Users/pengchen/codes/Scriptforge-1/backend/requirements.txt (瘦身 +  │
+     │ pin)                                                                    │
+     │ - /Users/pengchen/codes/Scriptforge-1/frontend/src/lib/store.ts (拆     │
+     │ slice)                                                                  │
+     │ - /Users/pengchen/codes/Scriptforge-1/frontend/src/lib/api.ts           │
+     │ (统一客户端)                                                            │
+     │ - /Users/pengchen/codes/Scriptforge-1/frontend/src/components/AIPanel/* │
+     │ .tsx                                                                    │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 七、执行优先级路线图                                                    │
+     │                                                                         │
+     │ ┌────────────────────┬──────┬────────────────────────────────────────── │
+     │ ───┐                                                                    │
+     │ │        阶段        │ 工时 │                    产出                   │
+     │    │                                                                    │
+     │ ├────────────────────┼──────┼────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ Week 1：P0 Bug     │ 3-5  │ RAG 恢复持久化、API key                   │
+     │    │                                                                    │
+     │ │ 全修               │ 天   │ 不再泄漏、事件循环不阻塞、SSE             │
+     │    │                                                                    │
+     │ │                    │      │ 不丢字、Reviewer 不再造假                 │
+     │    │                                                                    │
+     │ ├────────────────────┼──────┼────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ Week               │ 5-7  │ 根目录模块迁入 backend/core、删 shim、删  │
+     │    │                                                                    │
+     │ │ 2-3：后端架构收敛  │ 天   │ crewai/langchain、补最小集成测试、pin     │
+     │ 依赖  │                                                                 │
+     │ ├────────────────────┼──────┼────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ Week 3-4：前端重构 │ 5-7  │ Store 拆 slice、GenerationControls        │
+     │    │                                                                    │
+     │ │  + 评估重做        │ 天   │ 拆分、CPD 改 jieba+embedding、SSE 稳态化  │
+     │    │                                                                    │
+     │ ├────────────────────┼──────┼────────────────────────────────────────── │
+     │ ───┤                                                                    │
+     │ │ Week 5-6：短剧场景 │ 7-10 │ 聚焦短剧模板 + 钩子节奏评估 +             │
+     │    │                                                                    │
+     │ │  MVP               │  天  │ 端到端人评数据集                          │
+     │    │                                                                    │
+     │ └────────────────────┴──────┴────────────────────────────────────────── │
+     │ ───┘                                                                    │
+     │                                                                         │
+     │ 不重构直接加功能，DAU 上千后会因成本/质量/一致性全面崩盘。              │
+     │                                                                         │
+     │ ---                                                                     │
+     │ 八、验证方式                                                            │
+     │                                                                         │
+     │ 1. P0 回归                                                              │
+     │   - 重启后端，发起对话后重启，再次发起——确认 RAG 能检索到重启前记忆。   │
+     │   - 抓包 / tail log，确认 api_key 不出现在任何日志或错误响应中。        │
+     │   - 并发 10 个长生成请求，确认事件循环不被阻塞（p99 不显著劣化）。      │
+     │   - 模拟 LLM 返回非法 JSON，确认 Reviewer 返回 rejected 而非            │
+     │ pass=true。                                                             │
+     │   - 用 pytest 或手写脚本跑                                              │
+     │ CPD，输入中文对白，确认不同角色得分确实有差异（而非全相同）。           │
+     │ 2. 架构重构回归                                                         │
+     │   - grep -r "sys.path.insert" backend/ 应为空。                         │
+     │   - grep -r "import streamlit" backend/ 应为空（或只在测试 shim 里）。  │
+     │   - pip list | grep -E 'crewai|langchain' 应为空。                      │
+     │   - 启动 backend、frontend、tauri dev 三件套，完成"新建项目 → 写一段 →  │
+     │ AI 续写 → 评估 → 保存 → 重启 → 重新打开 → 继续写"全链路。               │
+     │ 3. 前端回归                                                             │
+     │   - 网络 throttling 下触发 SSE，确认无字符丢失、无重复。                │
+     │   - 插入 AI 建议后 Ctrl+Z 能撤销到插入前。                              │
+     │   - 键盘 Tab/Esc 能操作所有菜单和 Modal。                               │
+     │ 4. 评估体系对照                                                         │
+     │   - 同一批对白数据，分别跑旧 CPD 和新 CPD（jieba+embedding），与 3      │
+     │ 位人类编剧的评分做 Pearson                                              │
+     │ 相关。新指标相关性应显著高于旧指标（旧指标预期接近 0）。                │
+     ╰─────────────────────────────────────────────────────────────────────────╯

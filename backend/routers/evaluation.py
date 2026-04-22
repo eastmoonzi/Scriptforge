@@ -6,11 +6,12 @@ Endpoints for evaluating dialogue quality using CPD/DE/OOC metrics.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
 
 # Ensure root modules are importable
@@ -20,6 +21,15 @@ if _ROOT not in sys.path:
 
 router = APIRouter(prefix="/evaluate", tags=["evaluation"])
 logger = logging.getLogger("scriptforge.routers.evaluation")
+
+
+# ---------------------------------------------------------------------------
+# Dependency: extract API key from request header
+# ---------------------------------------------------------------------------
+
+async def get_api_key(x_api_key: str = Header("", alias="X-API-Key")) -> str:
+    """Extract API key from request header. Falls back to empty string."""
+    return x_api_key
 
 
 # ---------------------------------------------------------------------------
@@ -37,8 +47,9 @@ class EvaluateRequest(BaseModel):
         default_factory=dict,
         description="Character name → personality description, needed for OOC detection",
     )
-    api_key: str = ""
     model: str = "gemini-2.0-flash-exp"
+    provider: str = "gemini"
+    base_url: str = ""
 
 
 class EvaluateResponse(BaseModel):
@@ -54,15 +65,21 @@ class EvaluateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=EvaluateResponse)
-async def evaluate(req: EvaluateRequest):
+async def evaluate(req: EvaluateRequest, api_key: str = Depends(get_api_key)):
     """Evaluate dialogue quality — returns CPD, DE, and OOC scores."""
     try:
         from evaluation_system import EvaluationMetrics
 
-        metrics = EvaluationMetrics(api_key=req.api_key or None)
+        metrics = EvaluationMetrics(
+            api_key=api_key or None,
+            provider=req.provider,
+            model=req.model,
+            base_url=req.base_url,
+        )
         conversations = [{"speaker": m.speaker, "content": m.content} for m in req.conversations]
 
-        result = metrics.comprehensive_evaluation(
+        result = await asyncio.to_thread(
+            metrics.comprehensive_evaluation,
             conversations=conversations,
             character_profiles=req.character_profiles if req.character_profiles else None,
         )

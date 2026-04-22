@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '@/lib/store'
 import { isTauri } from '@/lib/api'
 import { streamClaude } from '@/lib/cli'
+import { MessageSquare } from 'lucide-react'
 
 type ChildProcess = { kill: () => Promise<void> }
 
@@ -157,7 +158,7 @@ export default function ChatPanel() {
   if (!isTauri()) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-4 space-y-3">
-        <div className="text-3xl">💬</div>
+        <MessageSquare className="w-8 h-8 text-zinc-400" />
         <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           AI 对话功能仅在桌面版中可用
         </p>

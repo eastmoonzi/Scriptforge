@@ -36,7 +36,7 @@ class MemoryService:
             from memory_rag import RAGMemorySystem
 
             persist_dir = str(Path(__file__).resolve().parent.parent / "data" / "chroma" / session_id)
-            rag = RAGMemorySystem(api_key=api_key, persist_directory=persist_dir)
+            rag = RAGMemorySystem(api_key=api_key, persist_directory=persist_dir, collection_name=f"memories_{session_id}")
             self._sessions[session_id] = rag
             return rag
         except ImportError:

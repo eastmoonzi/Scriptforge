@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useStore } from '@/lib/store'
+import { Pencil, X } from 'lucide-react'
 
 export default function CharacterManager() {
   const characters = useStore((s) => s.characters)
@@ -66,14 +67,14 @@ export default function CharacterManager() {
                     onClick={() => setEditingId(char.id)}
                     title="编辑"
                   >
-                    ✎
+                    <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
                     className="text-xs text-zinc-400 hover:text-red-500 p-1"
                     onClick={() => removeCharacter(char.id)}
                     title="删除"
                   >
-                    ✕
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>

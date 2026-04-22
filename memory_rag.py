@@ -22,13 +22,14 @@ class RAGMemorySystem:
     - 信息隔离：支持角色独立记忆（群聊+私聊）
     """
 
-    def __init__(self, api_key: str, persist_directory: str = "./chroma_db"):
+    def __init__(self, api_key: str, persist_directory: str = "./chroma_db", collection_name: str = "memories_default"):
         """
         初始化 RAG 记忆系统
 
         Args:
             api_key: Google API Key（用于 embedding）
             persist_directory: ChromaDB 持久化目录
+            collection_name: 集合名称（用于同一 session 的数据持久化）
         """
         self.api_key = api_key
 
@@ -38,8 +39,8 @@ class RAGMemorySystem:
         # 初始化 ChromaDB（本地持久化）
         self.client = chromadb.PersistentClient(path=persist_directory)
 
-        # 创建集合（Collection）- 每个场景一个集合
-        self.collection_name = f"memories_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # 创建集合（Collection）- 按 collection_name 区分不同 session
+        self.collection_name = collection_name
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             metadata={"description": "Multi-agent conversation memories"}

@@ -5,9 +5,19 @@ v3.4.0 - 分层架构实验
 """
 
 from crewai import Agent, Task, Crew, Process
-from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import List, Dict, Optional
 import json
+
+# Provider → OpenAI-compatible base URL mapping (duplicated here to avoid
+# cross-module import complexity with backend.services)
+_PROVIDER_BASE_URLS: dict = {
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com",
+    "kimi": "https://api.moonshot.cn/v1",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "minimax": "https://api.minimax.chat/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+}
 
 
 class DirectorSystem:
@@ -22,7 +32,8 @@ class DirectorSystem:
     """
 
     def __init__(self, scene: str, characters: List[Dict[str, str]],
-                 api_key: str, model_id: str = "gemini-2.0-flash-exp"):
+                 api_key: str, model_id: str = "gemini-2.0-flash-exp",
+                 provider: str = "gemini", base_url: str = ""):
         """
         初始化导演系统
 
@@ -31,19 +42,32 @@ class DirectorSystem:
             characters: 角色列表
             api_key: API Key
             model_id: 模型 ID
+            provider: LLM 提供商
+            base_url: 自定义 OpenAI 兼容端点
         """
         self.scene = scene
         self.characters = characters
         self.api_key = api_key
         self.model_id = model_id
 
-        # 初始化 LLM
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_id,
-            google_api_key=api_key,
-            temperature=0.7,
-            convert_system_message_to_human=True
-        )
+        # 初始化 LLM — Gemini 用 LangChain Google 包装，其他走 OpenAI 兼容
+        if provider == "gemini":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_id,
+                google_api_key=api_key,
+                temperature=0.7,
+                convert_system_message_to_human=True
+            )
+        else:
+            from langchain_openai import ChatOpenAI
+            resolved_url = base_url or _PROVIDER_BASE_URLS.get(provider, "")
+            self.llm = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=resolved_url,
+                temperature=0.7,
+            )
 
         # 创建管理层 Agents
         self.writer_agent = self._create_writer_agent()
@@ -177,8 +201,9 @@ class DirectorSystem:
 
         # ========== 阶段3：角色生成（支持重试）==========
         retry_count = 0
+        feedback = ""
         while retry_count <= max_retries:
-            dialogues = self._characters_perform(director_plan, character_memories)
+            dialogues = self._characters_perform(director_plan, character_memories, feedback=feedback)
 
             # ========== 阶段4：审核检查 ==========
             review_result = self._reviewer_check(plot_goal, director_plan, dialogues)
@@ -190,10 +215,11 @@ class DirectorSystem:
                 # 不通过，重试
                 retry_count += 1
                 if retry_count <= max_retries:
+                    feedback = review_result.get('feedback', '')
                     print(f"⚠️  审核不通过，第 {retry_count} 次重试...")
                 else:
-                    print(f"⚠️  已达最大重试次数，强制通过")
-                    review_result['pass'] = True  # 强制通过
+                    print(f"⚠️  已达最大重试次数，保留审核不通过状态")
+                    review_result['forced_after_retries'] = True
 
         return {
             'plot_goal': plot_goal,
@@ -292,7 +318,8 @@ class DirectorSystem:
         return director_plan
 
     def _characters_perform(self, director_plan: str,
-                           character_memories: Optional[Dict[str, List]]) -> List[Dict]:
+                           character_memories: Optional[Dict[str, List]],
+                           feedback: str = "") -> List[Dict]:
         """角色们执行表演"""
 
         # 解析导演计划
@@ -326,12 +353,19 @@ class DirectorSystem:
                 char_name, character_memories
             )
 
+            feedback_section = ""
+            if feedback:
+                feedback_section = f"""
+【审稿人反馈（请根据反馈改进）】
+{feedback}
+"""
+
             task = Task(
                 description=f"""
 场景：{self.scene}
 
 你的角色：{char_name}
-
+{feedback_section}
 【导演指示】
 {instruction}
 
@@ -464,6 +498,14 @@ class DirectorSystem:
                 context_parts.append("\n最近对话：")
                 for msg in recent:
                     context_parts.append(f"{msg['speaker']}: {msg['content']}")
+
+        # 对话历史（跨轮累积）
+        if self.conversation_history:
+            context_parts.append("\n之前轮次的对话：")
+            recent_history = self.conversation_history[-20:]  # keep last 20 entries
+            for entry in recent_history:
+                if isinstance(entry, dict) and 'speaker' in entry:
+                    context_parts.append(f"{entry['speaker']}: {entry['content']}")
 
         # 用户输入
         if user_message:

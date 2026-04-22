@@ -29,8 +29,20 @@ from template_manager import TemplateManager
 logger = logging.getLogger("scriptforge.generation")
 
 
+# Provider → OpenAI-compatible base URL mapping
+PROVIDER_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com",
+    "kimi": "https://api.moonshot.cn/v1",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "minimax": "https://api.minimax.chat/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+}
+
+
 class GenerationService:
-    """Stateless service that talks to Google Gemini or DeepSeek for script generation."""
+    """Stateless service for script generation. Supports Gemini (native SDK) and
+    any OpenAI-compatible provider (OpenAI, DeepSeek, Kimi, Qwen, MiniMax, etc.)."""
 
     def __init__(self, templates_dir: str | None = None):
         if templates_dir is None:
@@ -46,34 +58,74 @@ class GenerationService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _client(api_key: str):
+    def _gemini_client(api_key: str):
         import google.genai as genai
         return genai.Client(api_key=api_key)
 
     @staticmethod
-    def _deepseek_client(api_key: str):
+    def _openai_client(api_key: str, base_url: str):
         from openai import OpenAI
-        return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        return OpenAI(api_key=api_key, base_url=base_url)
 
     @staticmethod
-    def _generate_via_deepseek(client, model: str, prompt: str) -> str:
+    def _resolve_base_url(provider: str, base_url: str = "") -> str:
+        """Return the base_url for an OpenAI-compatible provider."""
+        if base_url:
+            return base_url
+        url = PROVIDER_BASE_URLS.get(provider, "")
+        if not url:
+            raise ValueError(f"未知的 provider「{provider}」且未提供 base_url")
+        return url
+
+    @staticmethod
+    def _generate_via_openai(client, model: str, prompt: str, system_prompt: str = "") -> str:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         response = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
         )
         return (response.choices[0].message.content or "").strip()
 
     @staticmethod
-    def _stream_via_deepseek(client, model: str, prompt: str):
+    def _stream_via_openai(client, model: str, prompt: str, system_prompt: str = ""):
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         stream = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             stream=True,
         )
         for chunk in stream:
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:
                 yield delta.content
+
+    def _build_system_prompt(
+        self,
+        character: dict[str, str],
+        characters: list[dict[str, str]],
+        style: str = "default",
+    ) -> str:
+        """Build the system prompt with role identity and behavioral rules."""
+        characters_text = "\n".join(
+            f"- {c['name']}: {c.get('personality', '')}" for c in characters
+        )
+
+        return f"""你正在扮演角色：{character['name']}（性格：{character.get('personality', '')}）
+
+所有角色：
+{characters_text}
+
+【行为规则】
+- 严格保持你的性格特点
+- 让对话自然流畅，不要生硬
+- 只输出你要说的一句话，不要加角色名，不要有其他说明
+- 不要旁白或描述动作，只说对白"""
 
     def _build_prompt(
         self,
@@ -83,54 +135,18 @@ class GenerationService:
         context: str = "",
         style: str = "default",
     ) -> str:
-        """Build the per-character generation prompt (mirrors app.py:521-650)."""
-        characters_text = "\n".join(
-            f"- {c['name']}: {c.get('personality', '')}" for c in characters
-        )
+        """Build the per-character generation prompt (user message with scene and context)."""
+        if not context.strip():
+            user_prompt = f"""场景：{scene}
 
-        is_initial = not context.strip()
-
-        if is_initial:
-            base_prompt = f"""
-你正在扮演角色：{character['name']}（性格：{character.get('personality', '')}）
-场景：{scene}
-
-所有角色：
-{characters_text}
-
-请以{character['name']}的身份和性格，在这个场景下说一句话。
-
-【重要提示】
-- 如果你是第一个发言，可以打招呼并对场景做出反应
-- 你的发言要符合你的性格特点
-- 要让对话自然流畅，不要生硬
-- 只输出你要说的一句话，不要加角色名，不要有其他说明
-
-你的发言：
-"""
+你是第一个发言的角色。请打招呼并对场景做出反应。"""
         else:
-            base_prompt = f"""
-你正在扮演角色：{character['name']}（性格：{character.get('personality', '')}）
-场景：{scene}
-
-所有角色：
-{characters_text}
+            user_prompt = f"""场景：{scene}
 
 最近的对话记录：
 {context}
 
-请以{character['name']}的身份和性格，在群聊中发言。
-
-【重要提示】
-- 仔细阅读上面的对话记录，理解整体对话的氛围和方向
-- 你可以自由选择回应的对象和方式
-- 你的发言要基于对整个记忆的理解，而不是只看最后一条消息
-- 要让对话连贯、自然、有深度
-- 充分展现你的性格特点
-- 只输出你要说的一句话，不要加角色名，不要有其他说明
-
-你的发言：
-"""
+请以你的身份和性格，在群聊中发言。仔细阅读上面的对话记录，理解整体对话的氛围和方向。"""
 
         # Apply template enhancement if available
         if self.template_manager and style != "default":
@@ -142,16 +158,16 @@ class GenerationService:
                         template_id = t["id"]
                         break
                 if template_id:
-                    base_prompt = self.template_manager.generate_enhanced_prompt(
+                    user_prompt = self.template_manager.generate_enhanced_prompt(
                         template_id=template_id,
                         scene=scene,
                         character=character,
-                        base_prompt=base_prompt,
+                        base_prompt=user_prompt,
                     )
             except Exception as e:
                 logger.warning("模版增强失败，使用默认 Prompt: %s", e)
 
-        return base_prompt
+        return user_prompt
 
     @staticmethod
     def _mock_dialogues(characters: list[dict[str, str]], scene: str) -> list[dict[str, str]]:
@@ -177,13 +193,9 @@ class GenerationService:
         model: str = "gemini-2.0-flash-exp",
         memory_context: dict[str, str] | None = None,
         provider: str = "gemini",
+        base_url: str = "",
     ) -> list[dict[str, str]]:
         """Generate the next round of dialogue — one line per character.
-
-        Args:
-            memory_context: Optional per-character RAG context, keyed by character name.
-                           Will be appended to the prompt for each character.
-            provider: ``"gemini"`` or ``"deepseek"``.
 
         Returns ``[{speaker, content}]``.
         """
@@ -191,33 +203,41 @@ class GenerationService:
             return self._mock_dialogues(characters, scene)
 
         try:
-            if provider == "deepseek":
-                client = self._deepseek_client(api_key)
+            if provider == "gemini":
+                client = self._gemini_client(api_key)
             else:
-                client = self._client(api_key)
+                client = self._openai_client(api_key, self._resolve_base_url(provider, base_url))
 
             dialogues: list[dict[str, str]] = []
+            round_context = context
 
             for char in characters:
-                enriched_context = context
+                enriched_context = round_context
                 if memory_context and char["name"] in memory_context:
                     enriched_context += "\n\n【相关记忆】\n" + memory_context[char["name"]]
-                prompt = self._build_prompt(scene, char, characters, enriched_context, style)
+                system_prompt = self._build_system_prompt(char, characters, style)
+                user_prompt = self._build_prompt(scene, char, characters, enriched_context, style)
 
-                if provider == "deepseek":
-                    text = self._generate_via_deepseek(client, model, prompt)
-                else:
-                    response = client.models.generate_content(model=model, contents=prompt)
+                if provider == "gemini":
+                    from google.genai import types
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=user_prompt,
+                        config=types.GenerateContentConfig(system_instruction=system_prompt),
+                    )
                     text = (response.text or "").strip()
+                else:
+                    text = self._generate_via_openai(client, model, user_prompt, system_prompt=system_prompt)
 
                 if text:
                     dialogues.append({"speaker": char["name"], "content": text})
+                    round_context += f"\n{char['name']}: {text}"
 
             return dialogues if dialogues else self._mock_dialogues(characters, scene)
 
         except Exception as e:
             logger.error("%s 生成失败: %s", provider, e)
-            return self._mock_dialogues(characters, scene)
+            raise RuntimeError(f"{provider} 生成失败: {e}") from e
 
     def generate_next_stream(
         self,
@@ -228,6 +248,8 @@ class GenerationService:
         api_key: str = "",
         model: str = "gemini-2.0-flash-exp",
         provider: str = "gemini",
+        base_url: str = "",
+        memory_context: dict[str, str] | None = None,
     ) -> Generator[dict[str, str], None, None]:
         """Streaming generation — yields ``{speaker, content}`` chunks.
 
@@ -241,32 +263,46 @@ class GenerationService:
             return
 
         try:
-            if provider == "deepseek":
-                client = self._deepseek_client(api_key)
+            if provider == "gemini":
+                client = self._gemini_client(api_key)
             else:
-                client = self._client(api_key)
+                client = self._openai_client(api_key, self._resolve_base_url(provider, base_url))
+
+            round_context = context
 
             for char in characters:
-                prompt = self._build_prompt(scene, char, characters, context, style)
+                enriched_context = round_context
+                if memory_context and char["name"] in memory_context:
+                    enriched_context += "\n\n【相关记忆】\n" + memory_context[char["name"]]
+                system_prompt = self._build_system_prompt(char, characters, style)
+                user_prompt = self._build_prompt(scene, char, characters, enriched_context, style)
 
-                if provider == "deepseek":
-                    for text in self._stream_via_deepseek(client, model, prompt):
-                        if text:
-                            yield {"speaker": char["name"], "content": text}
-                else:
-                    stream = client.models.generate_content_stream(model=model, contents=prompt)
+                full_text = ""
+                if provider == "gemini":
+                    from google.genai import types
+                    stream = client.models.generate_content_stream(
+                        model=model,
+                        contents=user_prompt,
+                        config=types.GenerateContentConfig(system_instruction=system_prompt),
+                    )
                     for chunk in stream:
                         text = chunk.text or ""
                         if text:
+                            full_text += text
+                            yield {"speaker": char["name"], "content": text}
+                else:
+                    for text in self._stream_via_openai(client, model, user_prompt, system_prompt=system_prompt):
+                        if text:
+                            full_text += text
                             yield {"speaker": char["name"], "content": text}
 
                 yield {"speaker": char["name"], "content": "[DONE]"}
+                if full_text.strip():
+                    round_context += f"\n{char['name']}: {full_text.strip()}"
 
         except Exception as e:
             logger.error("%s 流式生成失败: %s", provider, e)
-            for d in self._mock_dialogues(characters, scene):
-                yield {"speaker": d["speaker"], "content": d["content"]}
-                yield {"speaker": d["speaker"], "content": "[DONE]"}
+            yield {"speaker": "", "content": "[ERROR]", "error": str(e)}
 
     def generate_scene(
         self,
@@ -277,6 +313,7 @@ class GenerationService:
         api_key: str = "",
         model: str = "gemini-2.0-flash-exp",
         provider: str = "gemini",
+        base_url: str = "",
     ) -> str:
         """Generate a full scene in Fountain format."""
         if not api_key:
@@ -306,19 +343,16 @@ class GenerationService:
 请直接输出剧本内容，不要加其他说明。
 """
         try:
-            if provider == "deepseek":
-                client = self._deepseek_client(api_key)
-                return self._generate_via_deepseek(client, model, prompt)
-            else:
-                client = self._client(api_key)
+            if provider == "gemini":
+                client = self._gemini_client(api_key)
                 response = client.models.generate_content(model=model, contents=prompt)
                 return (response.text or "").strip()
+            else:
+                client = self._openai_client(api_key, self._resolve_base_url(provider, base_url))
+                return self._generate_via_openai(client, model, prompt)
         except Exception as e:
             logger.error("%s 场景生成失败: %s", provider, e)
-            lines = []
-            for i, c in enumerate(characters[:6]):
-                lines.append(f"\n{c['name']}\n（模拟续写）这是第 {i + 1} 句台词。")
-            return "\n".join(lines)
+            raise RuntimeError(f"{provider} 场景生成失败: {e}") from e
 
     def polish(
         self,
@@ -328,6 +362,7 @@ class GenerationService:
         api_key: str = "",
         model: str = "gemini-2.0-flash-exp",
         provider: str = "gemini",
+        base_url: str = "",
     ) -> str:
         """Polish / refine the given text."""
         if not api_key:
@@ -351,13 +386,13 @@ class GenerationService:
 润色结果：
 """
         try:
-            if provider == "deepseek":
-                client = self._deepseek_client(api_key)
-                return self._generate_via_deepseek(client, model, prompt)
-            else:
-                client = self._client(api_key)
+            if provider == "gemini":
+                client = self._gemini_client(api_key)
                 response = client.models.generate_content(model=model, contents=prompt)
                 return (response.text or "").strip()
+            else:
+                client = self._openai_client(api_key, self._resolve_base_url(provider, base_url))
+                return self._generate_via_openai(client, model, prompt)
         except Exception as e:
             logger.error("%s 润色失败: %s", provider, e)
-            return f"【润色后】{text}"
+            raise RuntimeError(f"{provider} 润色失败: {e}") from e

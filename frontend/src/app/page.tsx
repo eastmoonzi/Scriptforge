@@ -12,8 +12,10 @@ import HelpModal from '@/components/HelpModal'
 import CharacterManager from '@/components/AIPanel/CharacterManager'
 import SceneSettings from '@/components/AIPanel/SceneSettings'
 import GenerationControls from '@/components/AIPanel/GenerationControls'
+import LLMConfig from '@/components/AIPanel/LLMConfig'
 import OutlineNavigator from '@/components/AIPanel/OutlineNavigator'
 import ChatPanel from '@/components/AIPanel/ChatPanel'
+import EvaluationPanel from '@/components/AIPanel/EvaluationPanel'
 
 // TipTap must be client-only (no SSR)
 const FountainEditor = dynamic(() => import('@/components/Editor/FountainEditor'), {
@@ -31,6 +33,7 @@ const panelTabs = [
   { key: 'generation' as const, label: 'AI' },
   { key: 'outline' as const, label: '大纲' },
   { key: 'chat' as const, label: '对话' },
+  { key: 'evaluation' as const, label: '评测' },
 ]
 
 export default function Home() {
@@ -80,6 +83,9 @@ export default function Home() {
 
         {/* Right: AI Panel */}
         <div className="w-80 border-l border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex flex-col shrink-0">
+          {/* LLM Config — persistent across tabs */}
+          <LLMConfig />
+
           {/* Panel tabs */}
           <div className="flex border-b border-zinc-200 dark:border-zinc-700 shrink-0">
             {panelTabs.map((tab) => (
@@ -104,6 +110,7 @@ export default function Home() {
             {activePanel === 'generation' && <GenerationControls />}
             {activePanel === 'outline' && <OutlineNavigator />}
             {activePanel === 'chat' && <ChatPanel />}
+            {activePanel === 'evaluation' && <EvaluationPanel />}
           </div>
         </div>
       </div>

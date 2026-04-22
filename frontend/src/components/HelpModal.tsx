@@ -1,6 +1,7 @@
 'use client'
 
 import { useStore } from '@/lib/store'
+import { X } from 'lucide-react'
 
 export default function HelpModal() {
   const { showHelp, setShowHelp } = useStore()
@@ -23,7 +24,7 @@ export default function HelpModal() {
             className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
             onClick={() => setShowHelp(false)}
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 

@@ -2,13 +2,19 @@
 
 import { useRef } from 'react'
 import { useStore } from '@/lib/store'
-import { generateNext, generateScene, polishText, streamGenerate } from '@/lib/api'
+import { notify } from '@/lib/notify'
+import { generateNext, generateScene, polishText, streamGenerate, generateDirector } from '@/lib/api'
+import SuggestionSlot from './SuggestionSlot'
+import { Play, Pencil, ChevronDown, BookOpen } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { Button } from '@/components/ui/Button'
 
 export default function GenerationControls() {
   const {
-    scene, characters, style, apiKey, model, provider, isGenerating, useDirectorMode,
+    scene, characters, style, apiKey, model, provider, customBaseUrl, isGenerating, useDirectorMode,
     setIsGenerating, setStatusMessage, setFountainContent, fountainContent,
-    editorInstance, toggleDirectorMode,
+    editorInstance, toggleDirectorMode, getOrCreateRagSessionId,
+    setPendingSuggestion, appendSuggestionChunk, clearPendingSuggestion,
   } = useStore()
   const abortRef = useRef<(() => void) | null>(null)
 
@@ -16,60 +22,99 @@ export default function GenerationControls() {
 
   const handleGenerateNext = async () => {
     if (!apiKey) {
-      setStatusMessage('请先设置 API Key')
+      notify('请先设置 API Key', 'warning')
       return
     }
+    clearPendingSuggestion()
     setIsGenerating(true)
     setStatusMessage('正在生成...')
 
+    const baseUrl = provider === 'custom' && customBaseUrl ? { base_url: customBaseUrl } : {}
+
+    // 导演模式走独立接口
+    if (useDirectorMode) {
+      setPendingSuggestion({ mode: 'director', streaming: true, currentSpeaker: '', dialogues: [] })
+      try {
+        setStatusMessage('导演模式生成中...')
+        const result = await generateDirector({
+          scene,
+          characters: charParams,
+          context: fountainContent.slice(-2000),
+          model,
+          provider,
+          session_id: getOrCreateRagSessionId(),
+          ...baseUrl,
+        })
+        const feedback = (result.review as Record<string, unknown>)?.feedback as string ?? ''
+        setPendingSuggestion({
+          mode: 'director',
+          streaming: false,
+          currentSpeaker: '',
+          dialogues: result.dialogues,
+          plotGoal: result.plot_goal,
+          reviewFeedback: feedback || undefined,
+        })
+        notify(`导演模式完成｜目标：${result.plot_goal}`, 'success')
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '未知错误'
+        setPendingSuggestion({ mode: 'director', streaming: false, currentSpeaker: '', dialogues: [], error: msg })
+        notify(`导演模式失败: ${msg}`, 'error')
+      } finally {
+        setIsGenerating(false)
+      }
+      return
+    }
+
+    const sessionId = getOrCreateRagSessionId()
     const params = {
       scene,
       characters: charParams,
       style,
       context: fountainContent.slice(-2000),
-      api_key: apiKey,
       model,
       provider,
+      session_id: sessionId,
+      commit_memory: false,
+      ...baseUrl,
     }
 
+    setPendingSuggestion({ mode: 'next', streaming: true, currentSpeaker: '', dialogues: [] })
+
     // Try SSE streaming first, fall back to standard request
-    let streamingText = ''
-    let currentSpeaker = ''
     const abort = streamGenerate(
       params,
       (chunk) => {
         try {
           const data = JSON.parse(chunk)
-          if (data.content === '[DONE]') {
-            // Speaker finished
+          if (data.error) {
+            setPendingSuggestion({ mode: 'next', streaming: false, currentSpeaker: '', dialogues: [], error: data.error })
+            notify(`生成失败: ${data.error}`, 'error')
+            setIsGenerating(false)
             return
           }
-          if (data.speaker !== currentSpeaker) {
-            currentSpeaker = data.speaker
-            streamingText += `\n${data.speaker}\n`
-          }
-          streamingText += data.content
-          setFountainContent(fountainContent + '\n' + streamingText)
+          if (data.content === '[DONE]') return
+          appendSuggestionChunk(data.speaker, data.content)
         } catch {
-          // Non-JSON chunk, append as-is
-          streamingText += chunk
+          // 非 JSON chunk 忽略
         }
       },
       () => {
-        setStatusMessage('生成完成')
+        useStore.setState((s) => ({
+          pendingSuggestion: s.pendingSuggestion ? { ...s.pendingSuggestion, streaming: false } : null,
+        }))
+        notify('生成完成，请预览后插入', 'success')
         setIsGenerating(false)
       },
       async () => {
-        // SSE failed — fall back to standard request
+        // SSE 失败 — 降级到普通请求
         try {
           const result = await generateNext(params)
-          const fountain = result.dialogues
-            .map((d) => `\n${d.speaker}\n${d.content}`)
-            .join('\n')
-          setFountainContent(fountainContent + '\n' + fountain)
-          setStatusMessage('生成完成')
+          setPendingSuggestion({ mode: 'next', streaming: false, currentSpeaker: '', dialogues: result.dialogues })
+          notify('生成完成，请预览后插入', 'success')
         } catch (err) {
-          setStatusMessage(`生成失败: ${err instanceof Error ? err.message : '未知错误'}`)
+          const msg = err instanceof Error ? err.message : '未知错误'
+          setPendingSuggestion({ mode: 'next', streaming: false, currentSpeaker: '', dialogues: [], error: msg })
+          notify(`生成失败: ${msg}`, 'error')
         } finally {
           setIsGenerating(false)
         }
@@ -80,7 +125,7 @@ export default function GenerationControls() {
 
   const handleGenerateScene = async () => {
     if (!apiKey) {
-      setStatusMessage('请先设置 API Key')
+      notify('请先设置 API Key', 'warning')
       return
     }
     setIsGenerating(true)
@@ -91,14 +136,14 @@ export default function GenerationControls() {
         characters: charParams,
         style,
         plot_goal: '',
-        api_key: apiKey,
         model,
         provider,
+        ...(provider === 'custom' && customBaseUrl ? { base_url: customBaseUrl } : {}),
       })
       setFountainContent(fountainContent + '\n\n' + result.content)
-      setStatusMessage('续写完成')
+      notify('续写完成', 'success')
     } catch (err) {
-      setStatusMessage(`续写失败: ${err instanceof Error ? err.message : '未知错误'}`)
+      notify(`续写失败: ${err instanceof Error ? err.message : '未知错误'}`, 'error')
     } finally {
       setIsGenerating(false)
     }
@@ -106,7 +151,7 @@ export default function GenerationControls() {
 
   const handlePolish = async () => {
     if (!apiKey) {
-      setStatusMessage('请先设置 API Key')
+      notify('请先设置 API Key', 'warning')
       return
     }
 
@@ -139,9 +184,9 @@ export default function GenerationControls() {
         text: textToPolish,
         style,
         instruction: '润色这段剧本对白，使其更生动自然',
-        api_key: apiKey,
         model,
         provider,
+        ...(provider === 'custom' && customBaseUrl ? { base_url: customBaseUrl } : {}),
       })
 
       if (hasSelection && editorInstance) {
@@ -153,9 +198,9 @@ export default function GenerationControls() {
         const polished = fountainContent.slice(0, -500) + result.content
         setFountainContent(polished)
       }
-      setStatusMessage('润色完成')
+      notify('润色完成', 'success')
     } catch (err) {
-      setStatusMessage(`润色失败: ${err instanceof Error ? err.message : '未知错误'}`)
+      notify(`润色失败: ${err instanceof Error ? err.message : '未知错误'}`, 'error')
     } finally {
       setIsGenerating(false)
     }
@@ -163,56 +208,6 @@ export default function GenerationControls() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-        AI 生成控制
-      </h3>
-
-      <div className="space-y-2">
-        <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Provider</label>
-        <select
-          className="w-full text-sm bg-zinc-50 dark:bg-zinc-800 rounded-md px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 focus:border-blue-500 outline-none"
-          value={provider}
-          onChange={(e) => useStore.getState().setProvider(e.target.value as 'gemini' | 'deepseek')}
-        >
-          <option value="gemini">Google Gemini</option>
-          <option value="deepseek">DeepSeek</option>
-        </select>
-      </div>
-
-      <div className="space-y-2">
-        <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">API Key</label>
-        <input
-          type="password"
-          className="w-full text-sm bg-zinc-50 dark:bg-zinc-800 rounded-md px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 focus:border-blue-500 outline-none"
-          placeholder={provider === 'deepseek' ? 'DeepSeek API Key' : 'Gemini API Key'}
-          value={apiKey}
-          onChange={(e) => useStore.getState().setApiKey(e.target.value)}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">模型</label>
-        <select
-          className="w-full text-sm bg-zinc-50 dark:bg-zinc-800 rounded-md px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 focus:border-blue-500 outline-none"
-          value={model}
-          onChange={(e) => useStore.getState().setModel(e.target.value)}
-        >
-          {provider === 'deepseek' ? (
-            <>
-              <option value="deepseek-chat">DeepSeek V3 (deepseek-chat)</option>
-              <option value="deepseek-reasoner">DeepSeek R1 (deepseek-reasoner)</option>
-            </>
-          ) : (
-            <>
-              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (实验)</option>
-              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            </>
-          )}
-        </select>
-      </div>
-
       {/* Director mode toggle */}
       <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 cursor-pointer">
         <input
@@ -224,28 +219,51 @@ export default function GenerationControls() {
         导演模式（编剧→导演→角色→审稿）
       </label>
 
-      <div className="space-y-2 pt-2">
-        <button
-          className="w-full flex items-center justify-center gap-2 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-md py-2 transition-colors disabled:opacity-50"
-          disabled={isGenerating}
-          onClick={handleGenerateNext}
-        >
-          <span>▶</span> 生成下一段
-        </button>
-        <button
-          className="w-full flex items-center justify-center gap-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md py-2 transition-colors disabled:opacity-50"
-          disabled={isGenerating}
-          onClick={handleGenerateScene}
-        >
-          <span>▶</span> 续写整场戏
-        </button>
-        <button
-          className="w-full flex items-center justify-center gap-2 text-sm bg-violet-500 hover:bg-violet-600 text-white rounded-md py-2 transition-colors disabled:opacity-50"
-          disabled={isGenerating}
-          onClick={handlePolish}
-        >
-          <span>✎</span> 润色{editorInstance?.state.selection.from !== editorInstance?.state.selection.to ? '选中文本' : '最后段落'}
-        </button>
+      <div className="pt-2">
+        <div className="flex gap-0">
+          <Button
+            variant="accent"
+            className="flex-1 rounded-r-none"
+            disabled={isGenerating}
+            onClick={handleGenerateNext}
+          >
+            <Play className="w-4 h-4" />
+            生成下一段
+          </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button
+                variant="accent"
+                className="rounded-l-none border-l border-emerald-700 px-1.5"
+                disabled={isGenerating}
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-lg py-1 min-w-[160px] z-50"
+                sideOffset={2}
+                align="end"
+              >
+                <DropdownMenu.Item
+                  className="text-xs px-3 py-2 outline-none cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 data-[highlighted]:bg-zinc-100 dark:data-[highlighted]:bg-zinc-700 flex items-center gap-2"
+                  onSelect={() => handleGenerateScene()}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  续写整场戏
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="text-xs px-3 py-2 outline-none cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 data-[highlighted]:bg-zinc-100 dark:data-[highlighted]:bg-zinc-700 flex items-center gap-2"
+                  onSelect={() => handlePolish()}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  {editorInstance?.state.selection.from !== editorInstance?.state.selection.to ? '润色选中文本' : '润色最后段落'}
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
       </div>
 
       {isGenerating && (
@@ -254,12 +272,19 @@ export default function GenerationControls() {
           生成中...
           <button
             className="text-red-400 hover:text-red-500 ml-auto"
-            onClick={() => { abortRef.current?.(); setIsGenerating(false); setStatusMessage('已取消') }}
+            onClick={() => {
+              abortRef.current?.()
+              setIsGenerating(false)
+              clearPendingSuggestion()
+              notify('已取消', 'info')
+            }}
           >
             取消
           </button>
         </div>
       )}
+
+      <SuggestionSlot />
     </div>
   )
 }
