@@ -38,12 +38,12 @@ const panelTabs = [
 
 export default function Home() {
   const { isDarkMode, activePanel, setActivePanel } = useStore()
-  const [backendReady, setBackendReady] = useState(!isTauri())
+  const [backendReady, setBackendReady] = useState(false)
 
   // Restore saved state on mount
   useEffect(() => { restoreFromLocal() }, [])
 
-  // Wait for sidecar backend in Tauri environment
+  // Determine backend readiness on client only (avoids SSR hydration mismatch)
   useEffect(() => {
     if (isTauri()) {
       waitForBackend(30, 1000).then((ok) => {
@@ -52,6 +52,8 @@ export default function Home() {
           useStore.getState().setStatusMessage('后端启动失败，部分功能不可用')
         }
       })
+    } else {
+      setBackendReady(true)
     }
   }, [])
 
